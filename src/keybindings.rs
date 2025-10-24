@@ -18,7 +18,8 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
             editor.move_cursor(CursorMove::Back);
         }
         (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
-            editor.move_cursor(CursorMove::Down);
+            editor.textarea.insert_newline();
+            editor.reset_kill_sequence();
         }
         (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
             editor.move_cursor(CursorMove::Up);

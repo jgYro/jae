@@ -36,6 +36,7 @@ fn create_status_bar(editor: &Editor) -> Paragraph<'static> {
     let help_items = vec![
         ("C-a/e", "home/end"),
         ("C-f/b", "←→"),
+        ("C-n", "newline"),
         ("M-f/b", "word"),
         ("C-SPC", "mark"),
         ("C-w", "kill"),
