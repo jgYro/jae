@@ -25,7 +25,7 @@ impl Editor {
         } else {
             self.cancel_mark();
         }
-        self.last_was_kill = false;
+        // Don't reset last_was_kill when setting mark
     }
 
     pub fn cancel_mark(&mut self) {
@@ -104,7 +104,7 @@ impl Editor {
 
     pub fn move_cursor(&mut self, movement: CursorMove) {
         self.textarea.move_cursor(movement);
-        self.last_was_kill = false;
+        // Don't reset last_was_kill on movement - only on text changes
     }
 
     pub fn move_word_forward(&mut self) {
@@ -136,7 +136,7 @@ impl Editor {
             self.textarea.move_cursor(CursorMove::Down);
             self.textarea.move_cursor(CursorMove::Head);
         }
-        self.last_was_kill = false;
+        // Don't reset last_was_kill on movement
     }
 
     pub fn move_word_backward(&mut self) {
@@ -154,7 +154,7 @@ impl Editor {
                 self.textarea.move_cursor(CursorMove::Up);
                 self.textarea.move_cursor(CursorMove::End);
             }
-            self.last_was_kill = false;
+            // Don't reset last_was_kill on movement
             return;
         }
 
@@ -173,7 +173,7 @@ impl Editor {
         for _ in new_col..col {
             self.textarea.move_cursor(CursorMove::Back);
         }
-        self.last_was_kill = false;
+        // Don't reset last_was_kill on movement
     }
 
     pub fn reset_kill_sequence(&mut self) {

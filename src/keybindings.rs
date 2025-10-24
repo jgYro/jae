@@ -10,7 +10,7 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
 
     // Handle Emacs keybindings
     match (key.code, key.modifiers) {
-        // Basic movement
+        // Basic movement - these don't reset kill sequence
         (KeyCode::Char('f'), KeyModifiers::CONTROL) => {
             editor.move_cursor(CursorMove::Forward);
         }
@@ -19,7 +19,7 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
         }
         (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
             editor.textarea.insert_newline();
-            editor.reset_kill_sequence();
+            editor.reset_kill_sequence(); // This does reset because it modifies text
         }
         (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
             editor.move_cursor(CursorMove::Up);
@@ -31,7 +31,7 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
             editor.move_cursor(CursorMove::End);
         }
 
-        // Word movement (Alt/Meta combinations)
+        // Word movement - these don't reset kill sequence
         (KeyCode::Char('f'), KeyModifiers::ALT) => {
             editor.move_word_forward();
         }
@@ -39,7 +39,7 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
             editor.move_word_backward();
         }
 
-        // Selection and mark
+        // Selection and mark - doesn't reset kill sequence
         (KeyCode::Char(' '), KeyModifiers::CONTROL) => {
             editor.set_mark();
         }
