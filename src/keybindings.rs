@@ -54,6 +54,12 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
         (KeyCode::Char('y'), KeyModifiers::CONTROL) => {
             editor.yank();
         }
+        (KeyCode::Char('k'), KeyModifiers::CONTROL) => {
+            editor.kill_to_end_of_line();
+        }
+        (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+            editor.kill_to_beginning_of_line();
+        }
 
         // Default: pass through to textarea
         _ => {

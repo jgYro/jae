@@ -179,4 +179,90 @@ impl Editor {
     pub fn reset_kill_sequence(&mut self) {
         self.last_was_kill = false;
     }
+
+    pub fn kill_to_end_of_line(&mut self) {
+        let (row, col) = self.textarea.cursor();
+
+        // Collect needed information before mutating
+        let (killed_text, should_move_to_end) = {
+            let lines = self.textarea.lines();
+
+            if row >= lines.len() {
+                return;
+            }
+
+            let line = &lines[row];
+
+            if col < line.len() {
+                // Kill from cursor to end of line
+                (line[col..].to_string(), true)
+            } else if row + 1 < lines.len() {
+                // If at end of line, kill the newline (join with next line)
+                ("\n".to_string(), false)
+            } else {
+                return;
+            }
+        };
+
+        if !killed_text.is_empty() {
+            // Add to kill ring
+            if self.last_was_kill {
+                self.kill_ring.append_to_last(killed_text.clone());
+            } else {
+                self.kill_ring.push(killed_text.clone());
+            }
+
+            // Select the text to kill
+            self.textarea.start_selection();
+            if should_move_to_end {
+                // Move to end of line
+                self.textarea.move_cursor(CursorMove::End);
+            } else {
+                // Move to beginning of next line (to select the newline)
+                self.textarea.move_cursor(CursorMove::Down);
+                self.textarea.move_cursor(CursorMove::Head);
+            }
+
+            // Cut the selected text
+            self.textarea.cut();
+            self.mark_active = false;
+            self.last_was_kill = true;
+        }
+    }
+
+    pub fn kill_to_beginning_of_line(&mut self) {
+        let (row, col) = self.textarea.cursor();
+
+        // Collect needed information before mutating
+        let killed_text = {
+            let lines = self.textarea.lines();
+
+            if row >= lines.len() || col == 0 {
+                return;
+            }
+
+            let line = &lines[row];
+            line[0..col].to_string()
+        };
+
+        if !killed_text.is_empty() {
+            let text_len = killed_text.len();
+            // Add to kill ring (C-u doesn't append to previous kills)
+            self.kill_ring.push(killed_text);
+
+            // Move to beginning of line
+            self.textarea.move_cursor(CursorMove::Head);
+
+            // Start selection and move forward to select the text
+            self.textarea.start_selection();
+            for _ in 0..text_len {
+                self.textarea.move_cursor(CursorMove::Forward);
+            }
+
+            // Cut the selected text
+            self.textarea.cut();
+            self.mark_active = false;
+            self.last_was_kill = false; // C-u doesn't continue kill sequence
+        }
+    }
 }
