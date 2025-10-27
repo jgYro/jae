@@ -97,56 +97,77 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
 }
 
 fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
-    match (key.code, key.modifiers) {
-        // Close floating window with ESC or M-q
-        (KeyCode::Esc, _) | (KeyCode::Char('q'), KeyModifiers::ALT) => {
-            editor.floating_window = None;
-            editor.focus_floating = false;
-        }
+    if let Some(ref mut fw) = editor.floating_window {
+        match &mut fw.mode {
+            crate::editor::FloatingMode::Menu { options, selected } => {
+                // Menu mode navigation
+                match key.code {
+                    KeyCode::Esc | KeyCode::Char('q') if key.modifiers == KeyModifiers::ALT => {
+                        editor.floating_window = None;
+                        editor.focus_floating = false;
+                    }
+                    KeyCode::Up | KeyCode::Char('p') if key.modifiers == KeyModifiers::CONTROL => {
+                        if *selected > 0 {
+                            *selected -= 1;
+                        }
+                    }
+                    KeyCode::Down | KeyCode::Char('n') if key.modifiers == KeyModifiers::CONTROL => {
+                        if *selected < options.len() - 1 {
+                            *selected += 1;
+                        }
+                    }
+                    KeyCode::Enter => {
+                        // Apply the selected option
+                        let option = options[*selected].clone();
+                        editor.apply_menu_option(option);
+                    }
+                    KeyCode::Tab => {
+                        editor.focus_floating = false;
+                    }
+                    _ => {}
+                }
+            }
+            crate::editor::FloatingMode::TextEdit => {
+                // Text edit mode
+                match (key.code, key.modifiers) {
+                    // Close floating window with ESC or M-q
+                    (KeyCode::Esc, _) | (KeyCode::Char('q'), KeyModifiers::ALT) => {
+                        editor.floating_window = None;
+                        editor.focus_floating = false;
+                    }
 
-        // Switch focus with Tab
-        (KeyCode::Tab, _) => {
-            editor.focus_floating = false;
-        }
+                    // Switch focus with Tab
+                    (KeyCode::Tab, _) => {
+                        editor.focus_floating = false;
+                    }
 
-        // Basic movement commands for floating window
-        (KeyCode::Char('f'), KeyModifiers::CONTROL) => {
-            if let Some(ref mut fw) = editor.floating_window {
-                fw.textarea.move_cursor(CursorMove::Forward);
-            }
-        }
-        (KeyCode::Char('b'), KeyModifiers::CONTROL) => {
-            if let Some(ref mut fw) = editor.floating_window {
-                fw.textarea.move_cursor(CursorMove::Back);
-            }
-        }
-        (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
-            if let Some(ref mut fw) = editor.floating_window {
-                fw.textarea.move_cursor(CursorMove::Down);
-            }
-        }
-        (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
-            if let Some(ref mut fw) = editor.floating_window {
-                fw.textarea.move_cursor(CursorMove::Up);
-            }
-        }
-        (KeyCode::Char('a'), KeyModifiers::CONTROL) => {
-            if let Some(ref mut fw) = editor.floating_window {
-                fw.textarea.move_cursor(CursorMove::Head);
-            }
-        }
-        (KeyCode::Char('e'), KeyModifiers::CONTROL) => {
-            if let Some(ref mut fw) = editor.floating_window {
-                fw.textarea.move_cursor(CursorMove::End);
-            }
-        }
+                    // Basic movement commands for floating window
+                    (KeyCode::Char('f'), KeyModifiers::CONTROL) => {
+                        fw.textarea.move_cursor(CursorMove::Forward);
+                    }
+                    (KeyCode::Char('b'), KeyModifiers::CONTROL) => {
+                        fw.textarea.move_cursor(CursorMove::Back);
+                    }
+                    (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
+                        fw.textarea.move_cursor(CursorMove::Down);
+                    }
+                    (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
+                        fw.textarea.move_cursor(CursorMove::Up);
+                    }
+                    (KeyCode::Char('a'), KeyModifiers::CONTROL) => {
+                        fw.textarea.move_cursor(CursorMove::Head);
+                    }
+                    (KeyCode::Char('e'), KeyModifiers::CONTROL) => {
+                        fw.textarea.move_cursor(CursorMove::End);
+                    }
 
-        // Default: pass through to floating window textarea
-        _ => {
-            if let Some(ref mut fw) = editor.floating_window {
-                let event = ratatui::crossterm::event::Event::Key(key);
-                let input: Input = event.into();
-                fw.textarea.input(input);
+                    // Default: pass through to floating window textarea
+                    _ => {
+                        let event = ratatui::crossterm::event::Event::Key(key);
+                        let input: Input = event.into();
+                        fw.textarea.input(input);
+                    }
+                }
             }
         }
     }

@@ -1,6 +1,38 @@
 use crate::kill_ring::KillRing;
 use tui_textarea::{CursorMove, TextArea};
 
+#[derive(Clone)]
+pub enum MenuOption {
+    // Text transformation options (when text is selected)
+    Uppercase,
+    Lowercase,
+    Capitalize,
+    Reverse,
+    // Input options (when no text is selected)
+    InsertDate,
+    InsertLorem,
+    InsertBullets,
+}
+
+impl MenuOption {
+    pub fn label(&self) -> &str {
+        match self {
+            MenuOption::Uppercase => "UPPERCASE",
+            MenuOption::Lowercase => "lowercase",
+            MenuOption::Capitalize => "Capitalize Words",
+            MenuOption::Reverse => "Reverse Text",
+            MenuOption::InsertDate => "Insert Date",
+            MenuOption::InsertLorem => "Insert Lorem Ipsum",
+            MenuOption::InsertBullets => "Insert Bullet List",
+        }
+    }
+}
+
+pub enum FloatingMode {
+    TextEdit,
+    Menu { options: Vec<MenuOption>, selected: usize },
+}
+
 pub struct FloatingWindow {
     pub textarea: TextArea<'static>,
     pub visible: bool,
@@ -8,6 +40,7 @@ pub struct FloatingWindow {
     pub y: u16,
     pub width: u16,
     pub height: u16,
+    pub mode: FloatingMode,
 }
 
 pub struct Editor {
@@ -84,13 +117,29 @@ impl Editor {
             let line = &lines[row];
             let start_col = if row == start.0 { start.1 } else { 0 };
             let end_col = if row == end.0 {
-                end.1.min(line.len())
+                end.1.min(line.chars().count())
             } else {
-                line.len()
+                line.chars().count()
             };
 
-            if start_col <= end_col && end_col <= line.len() {
-                selected.push_str(&line[start_col..end_col]);
+            // Convert character indices to byte indices for proper UTF-8 slicing
+            let mut char_pos = 0;
+            let mut start_byte = 0;
+            let mut end_byte = line.len();
+
+            for (byte_idx, _) in line.char_indices() {
+                if char_pos == start_col {
+                    start_byte = byte_idx;
+                }
+                if char_pos == end_col {
+                    end_byte = byte_idx;
+                    break;
+                }
+                char_pos += 1;
+            }
+
+            if start_byte <= end_byte && end_byte <= line.len() {
+                selected.push_str(&line[start_byte..end_byte]);
             }
 
             if row < end.0 {
@@ -329,13 +378,29 @@ impl Editor {
                     .add_modifier(ratatui::style::Modifier::REVERSED)
             );
 
-            // If there was selected text, copy it to the floating window
-            if was_mark_active && selection_range.is_some() {
-                if let Some(text) = self.get_selected_text() {
-                    floating_textarea.insert_str(&text);
-                    floating_textarea.move_cursor(CursorMove::Head);
+            // Determine the mode based on whether text is selected
+            let mode = if was_mark_active && selection_range.is_some() {
+                // Show text transformation menu
+                FloatingMode::Menu {
+                    options: vec![
+                        MenuOption::Uppercase,
+                        MenuOption::Lowercase,
+                        MenuOption::Capitalize,
+                        MenuOption::Reverse,
+                    ],
+                    selected: 0,
                 }
-            }
+            } else {
+                // Show insert menu
+                FloatingMode::Menu {
+                    options: vec![
+                        MenuOption::InsertDate,
+                        MenuOption::InsertLorem,
+                        MenuOption::InsertBullets,
+                    ],
+                    selected: 0,
+                }
+            };
 
             self.floating_window = Some(FloatingWindow {
                 textarea: floating_textarea,
@@ -344,6 +409,7 @@ impl Editor {
                 y,
                 width: 40,
                 height: 10,
+                mode,
             });
             self.focus_floating = true;
 
@@ -362,5 +428,77 @@ impl Editor {
         } else {
             &mut self.textarea
         }
+    }
+
+    pub fn apply_menu_option(&mut self, option: MenuOption) {
+        match option {
+            MenuOption::Uppercase => {
+                if let Some(text) = self.get_selected_text() {
+                    let transformed = text.to_uppercase();
+                    self.replace_selection(transformed);
+                }
+            }
+            MenuOption::Lowercase => {
+                if let Some(text) = self.get_selected_text() {
+                    let transformed = text.to_lowercase();
+                    self.replace_selection(transformed);
+                }
+            }
+            MenuOption::Capitalize => {
+                if let Some(text) = self.get_selected_text() {
+                    let transformed = text
+                        .split_whitespace()
+                        .map(|word| {
+                            let mut chars = word.chars();
+                            match chars.next() {
+                                None => String::new(),
+                                Some(first) => first.to_uppercase().chain(chars.as_str().to_lowercase().chars()).collect(),
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    self.replace_selection(transformed);
+                }
+            }
+            MenuOption::Reverse => {
+                if let Some(text) = self.get_selected_text() {
+                    let transformed = text.chars().rev().collect();
+                    self.replace_selection(transformed);
+                }
+            }
+            MenuOption::InsertDate => {
+                use std::time::SystemTime;
+                let now = SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap();
+                // Simple date format (you could use chrono crate for better formatting)
+                let date = format!("2024-{:02}-{:02}",
+                    (now.as_secs() / 86400 / 30) % 12 + 1,
+                    (now.as_secs() / 86400) % 30 + 1
+                );
+                self.textarea.insert_str(&date);
+            }
+            MenuOption::InsertLorem => {
+                let lorem = "Lorem ipsum dolor sit amet, consectetur adipiscing elit.";
+                self.textarea.insert_str(lorem);
+            }
+            MenuOption::InsertBullets => {
+                let bullets = "• Item 1\n• Item 2\n• Item 3";
+                self.textarea.insert_str(bullets);
+            }
+        }
+
+        // Close floating window after applying
+        self.floating_window = None;
+        self.focus_floating = false;
+    }
+
+    fn replace_selection(&mut self, new_text: String) {
+        // Delete selected text
+        self.textarea.cut();
+        // Insert new text
+        self.textarea.insert_str(&new_text);
+        // Cancel mark
+        self.mark_active = false;
     }
 }

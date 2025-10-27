@@ -1,9 +1,9 @@
-use crate::editor::Editor;
+use crate::editor::{Editor, FloatingMode};
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
     Frame,
 };
 
@@ -29,6 +29,11 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
             frame.render_widget(Clear, area);
 
             // Draw floating window with border
+            let title = match &fw.mode {
+                FloatingMode::Menu { .. } => "Menu - Use ↑↓ to navigate, Enter to select",
+                FloatingMode::TextEdit => "Floating",
+            };
+
             let block = Block::default()
                 .borders(Borders::ALL)
                 .border_style(if editor.focus_floating {
@@ -36,11 +41,43 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
                 } else {
                     Style::default().fg(Color::Gray)
                 })
-                .title("Floating");
+                .title(title);
 
             let inner_area = block.inner(area);
             frame.render_widget(block, area);
-            frame.render_widget(&fw.textarea, inner_area);
+
+            // Render content based on mode
+            match &fw.mode {
+                FloatingMode::Menu { options, selected } => {
+                    // Create menu items
+                    let items: Vec<ListItem> = options
+                        .iter()
+                        .enumerate()
+                        .map(|(i, opt)| {
+                            let content = if i == *selected {
+                                format!("→ {}", opt.label())
+                            } else {
+                                format!("  {}", opt.label())
+                            };
+                            ListItem::new(content).style(
+                                if i == *selected {
+                                    Style::default()
+                                        .fg(Color::Yellow)
+                                        .add_modifier(Modifier::BOLD)
+                                } else {
+                                    Style::default()
+                                }
+                            )
+                        })
+                        .collect();
+
+                    let list = List::new(items);
+                    frame.render_widget(list, inner_area);
+                }
+                FloatingMode::TextEdit => {
+                    frame.render_widget(&fw.textarea, inner_area);
+                }
+            }
         }
     }
 }
