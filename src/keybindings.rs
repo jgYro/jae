@@ -8,6 +8,11 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
         return false;
     }
 
+    // If floating window is focused, handle input specially
+    if editor.focus_floating && editor.floating_window.is_some() {
+        return handle_floating_input(editor, key);
+    }
+
     // Handle Emacs keybindings
     match (key.code, key.modifiers) {
         // Basic movement - these don't reset kill sequence
@@ -46,6 +51,11 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
             editor.move_word_backward();
         }
 
+        // Floating window
+        (KeyCode::Char('q'), KeyModifiers::ALT) => {
+            editor.toggle_floating_window();
+        }
+
         // Selection and mark - doesn't reset kill sequence
         (KeyCode::Char(' '), KeyModifiers::CONTROL) => {
             editor.set_mark();
@@ -80,7 +90,77 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
     true
 }
 
+fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
+    match (key.code, key.modifiers) {
+        // Close floating window with ESC or M-q
+        (KeyCode::Esc, _) | (KeyCode::Char('q'), KeyModifiers::ALT) => {
+            editor.floating_window = None;
+            editor.focus_floating = false;
+        }
+
+        // Switch focus with Tab
+        (KeyCode::Tab, _) => {
+            editor.focus_floating = false;
+        }
+
+        // Basic movement commands for floating window
+        (KeyCode::Char('f'), KeyModifiers::CONTROL) => {
+            if let Some(ref mut fw) = editor.floating_window {
+                fw.textarea.move_cursor(CursorMove::Forward);
+            }
+        }
+        (KeyCode::Char('b'), KeyModifiers::CONTROL) => {
+            if let Some(ref mut fw) = editor.floating_window {
+                fw.textarea.move_cursor(CursorMove::Back);
+            }
+        }
+        (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
+            if let Some(ref mut fw) = editor.floating_window {
+                fw.textarea.move_cursor(CursorMove::Down);
+            }
+        }
+        (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
+            if let Some(ref mut fw) = editor.floating_window {
+                fw.textarea.move_cursor(CursorMove::Up);
+            }
+        }
+        (KeyCode::Char('a'), KeyModifiers::CONTROL) => {
+            if let Some(ref mut fw) = editor.floating_window {
+                fw.textarea.move_cursor(CursorMove::Head);
+            }
+        }
+        (KeyCode::Char('e'), KeyModifiers::CONTROL) => {
+            if let Some(ref mut fw) = editor.floating_window {
+                fw.textarea.move_cursor(CursorMove::End);
+            }
+        }
+
+        // Default: pass through to floating window textarea
+        _ => {
+            if let Some(ref mut fw) = editor.floating_window {
+                let event = ratatui::crossterm::event::Event::Key(key);
+                let input: Input = event.into();
+                fw.textarea.input(input);
+            }
+        }
+    }
+
+    true
+}
+
 fn should_quit(editor: &mut Editor, key: &KeyEvent) -> bool {
+    // Close floating window first if it's open
+    if editor.floating_window.is_some() {
+        match (key.code, key.modifiers) {
+            (KeyCode::Esc, _) | (KeyCode::Char('g'), KeyModifiers::CONTROL) => {
+                editor.floating_window = None;
+                editor.focus_floating = false;
+                return false; // Don't quit main editor, just close floating
+            }
+            _ => {}
+        }
+    }
+
     match (key.code, key.modifiers) {
         (KeyCode::Esc, _) => {
             if editor.mark_active {

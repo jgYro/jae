@@ -1,11 +1,22 @@
 use crate::kill_ring::KillRing;
 use tui_textarea::{CursorMove, TextArea};
 
+pub struct FloatingWindow {
+    pub textarea: TextArea<'static>,
+    pub visible: bool,
+    pub x: u16,
+    pub y: u16,
+    pub width: u16,
+    pub height: u16,
+}
+
 pub struct Editor {
     pub textarea: TextArea<'static>,
     pub mark_active: bool,
     pub kill_ring: KillRing,
     pub last_was_kill: bool,
+    pub floating_window: Option<FloatingWindow>,
+    pub focus_floating: bool,
 }
 
 impl Editor {
@@ -29,6 +40,8 @@ impl Editor {
             mark_active: false,
             kill_ring: KillRing::new(),
             last_was_kill: false,
+            floating_window: None,
+            focus_floating: false,
         }
     }
 
@@ -283,6 +296,71 @@ impl Editor {
             self.textarea.cut();
             self.mark_active = false;
             self.last_was_kill = false; // C-u doesn't continue kill sequence
+        }
+    }
+
+    pub fn toggle_floating_window(&mut self) {
+        if self.floating_window.is_some() {
+            // Close floating window
+            self.floating_window = None;
+            self.focus_floating = false;
+        } else {
+            // Preserve selection state before creating floating window
+            let selection_range = self.textarea.selection_range();
+            let was_mark_active = self.mark_active;
+
+            // Create floating window near cursor
+            let (cursor_row, cursor_col) = self.textarea.cursor();
+
+            // Calculate position (offset from cursor)
+            let x = (cursor_col as u16).saturating_add(5).min(80);
+            let y = (cursor_row as u16).saturating_add(2).min(20);
+
+            let mut floating_textarea = TextArea::default();
+
+            // Apply similar styling as main textarea
+            floating_textarea.set_cursor_style(
+                ratatui::style::Style::default()
+                    .add_modifier(ratatui::style::Modifier::REVERSED)
+            );
+            floating_textarea.set_cursor_line_style(ratatui::style::Style::default());
+            floating_textarea.set_selection_style(
+                ratatui::style::Style::default()
+                    .add_modifier(ratatui::style::Modifier::REVERSED)
+            );
+
+            // If there was selected text, copy it to the floating window
+            if was_mark_active && selection_range.is_some() {
+                if let Some(text) = self.get_selected_text() {
+                    floating_textarea.insert_str(&text);
+                    floating_textarea.move_cursor(CursorMove::Head);
+                }
+            }
+
+            self.floating_window = Some(FloatingWindow {
+                textarea: floating_textarea,
+                visible: true,
+                x,
+                y,
+                width: 40,
+                height: 10,
+            });
+            self.focus_floating = true;
+
+            // Maintain the mark_active state
+            // The selection in main textarea should remain intact
+        }
+    }
+
+    pub fn get_active_textarea(&mut self) -> &mut TextArea<'static> {
+        if self.focus_floating {
+            if let Some(ref mut fw) = self.floating_window {
+                &mut fw.textarea
+            } else {
+                &mut self.textarea
+            }
+        } else {
+            &mut self.textarea
         }
     }
 }
