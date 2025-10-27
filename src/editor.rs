@@ -180,6 +180,12 @@ impl Editor {
         self.last_was_kill = false;
     }
 
+    pub fn is_at_last_line(&self) -> bool {
+        let (row, _) = self.textarea.cursor();
+        let lines = self.textarea.lines();
+        row == lines.len() - 1 || lines.is_empty()
+    }
+
     pub fn kill_to_end_of_line(&mut self) {
         let (row, col) = self.textarea.cursor();
 

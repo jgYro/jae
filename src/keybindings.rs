@@ -18,8 +18,15 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
             editor.move_cursor(CursorMove::Back);
         }
         (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
-            editor.textarea.insert_newline();
-            editor.reset_kill_sequence(); // This does reset because it modifies text
+            if editor.is_at_last_line() {
+                // At the end of document, insert a newline
+                editor.textarea.move_cursor(CursorMove::End);
+                editor.textarea.insert_newline();
+                editor.reset_kill_sequence();
+            } else {
+                // Normal case: just move down
+                editor.move_cursor(CursorMove::Down);
+            }
         }
         (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
             editor.move_cursor(CursorMove::Up);
