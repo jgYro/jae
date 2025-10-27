@@ -10,8 +10,22 @@ pub struct Editor {
 
 impl Editor {
     pub fn new() -> Self {
+        let mut textarea = TextArea::default();
+        // Set cursor to be a visible block with inverted colors
+        textarea.set_cursor_style(
+            ratatui::style::Style::default()
+                .add_modifier(ratatui::style::Modifier::REVERSED)
+        );
+        // Remove underline from the current line
+        textarea.set_cursor_line_style(ratatui::style::Style::default());
+        // Set selection style to be visible (highlighted with reversed colors)
+        textarea.set_selection_style(
+            ratatui::style::Style::default()
+                .add_modifier(ratatui::style::Modifier::REVERSED)
+        );
+
         Self {
-            textarea: TextArea::default(),
+            textarea,
             mark_active: false,
             kill_ring: KillRing::new(),
             last_was_kill: false,
