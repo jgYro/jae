@@ -2,35 +2,104 @@ use crate::kill_ring::KillRing;
 use tui_textarea::{CursorMove, TextArea};
 
 #[derive(Clone)]
-pub enum MenuOption {
-    // Text transformation options (when text is selected)
+pub enum MenuAction {
+    // Text transformation actions
     Uppercase,
     Lowercase,
     Capitalize,
     Reverse,
-    // Input options (when no text is selected)
+    Base64Encode,
+    Base64Decode,
+    UrlEncode,
+    UrlDecode,
+    // Insert actions
     InsertDate,
+    InsertTime,
+    InsertDateTime,
     InsertLorem,
     InsertBullets,
+    InsertNumbers,
+    InsertTodo,
+    // Text analysis
+    CountWords,
+    CountChars,
+    CountLines,
 }
 
-impl MenuOption {
+#[derive(Clone)]
+pub enum MenuItem {
+    Action(MenuAction, String), // (action, label)
+    Category(String, Vec<MenuItem>), // (category name, items)
+}
+
+impl MenuItem {
     pub fn label(&self) -> &str {
         match self {
-            MenuOption::Uppercase => "UPPERCASE",
-            MenuOption::Lowercase => "lowercase",
-            MenuOption::Capitalize => "Capitalize Words",
-            MenuOption::Reverse => "Reverse Text",
-            MenuOption::InsertDate => "Insert Date",
-            MenuOption::InsertLorem => "Insert Lorem Ipsum",
-            MenuOption::InsertBullets => "Insert Bullet List",
+            MenuItem::Action(_, label) => label,
+            MenuItem::Category(name, _) => name,
+        }
+    }
+
+    pub fn is_category(&self) -> bool {
+        matches!(self, MenuItem::Category(_, _))
+    }
+}
+
+pub struct MenuState {
+    pub items: Vec<MenuItem>,
+    pub selected: usize,
+    pub path: Vec<String>, // Breadcrumb trail
+}
+
+impl MenuState {
+    pub fn new(items: Vec<MenuItem>) -> Self {
+        Self {
+            items,
+            selected: 0,
+            path: Vec::new(),
+        }
+    }
+
+    pub fn enter_category(&mut self) -> bool {
+        if let Some(MenuItem::Category(name, items)) = self.items.get(self.selected) {
+            self.path.push(name.clone());
+            self.items = items.clone();
+            self.selected = 0;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn go_back(&mut self, root_items: &[MenuItem]) -> bool {
+        if !self.path.is_empty() {
+            self.path.pop();
+
+            // Navigate back through the tree
+            let mut current = root_items.to_vec();
+            for segment in &self.path {
+                for item in &current {
+                    if let MenuItem::Category(name, items) = item {
+                        if name == segment {
+                            current = items.clone();
+                            break;
+                        }
+                    }
+                }
+            }
+
+            self.items = current;
+            self.selected = 0;
+            true
+        } else {
+            false
         }
     }
 }
 
 pub enum FloatingMode {
     TextEdit,
-    Menu { options: Vec<MenuOption>, selected: usize },
+    Menu { state: MenuState, root_items: Vec<MenuItem> },
 }
 
 pub struct FloatingWindow {
@@ -378,28 +447,48 @@ impl Editor {
                     .add_modifier(ratatui::style::Modifier::REVERSED)
             );
 
-            // Determine the mode based on whether text is selected
-            let mode = if was_mark_active && selection_range.is_some() {
-                // Show text transformation menu
-                FloatingMode::Menu {
-                    options: vec![
-                        MenuOption::Uppercase,
-                        MenuOption::Lowercase,
-                        MenuOption::Capitalize,
-                        MenuOption::Reverse,
-                    ],
-                    selected: 0,
-                }
+            // Determine the menu based on whether text is selected
+            let root_items = if was_mark_active && selection_range.is_some() {
+                // Text transformation menu for selected text
+                vec![
+                    MenuItem::Category("Transform Case".to_string(), vec![
+                        MenuItem::Action(MenuAction::Uppercase, "UPPERCASE".to_string()),
+                        MenuItem::Action(MenuAction::Lowercase, "lowercase".to_string()),
+                        MenuItem::Action(MenuAction::Capitalize, "Capitalize Words".to_string()),
+                    ]),
+                    MenuItem::Category("Encoding/Decoding".to_string(), vec![
+                        MenuItem::Action(MenuAction::Base64Encode, "Base64 Encode".to_string()),
+                        MenuItem::Action(MenuAction::Base64Decode, "Base64 Decode".to_string()),
+                        MenuItem::Action(MenuAction::UrlEncode, "URL Encode".to_string()),
+                        MenuItem::Action(MenuAction::UrlDecode, "URL Decode".to_string()),
+                    ]),
+                    MenuItem::Action(MenuAction::Reverse, "Reverse Text".to_string()),
+                    MenuItem::Category("Text Analysis".to_string(), vec![
+                        MenuItem::Action(MenuAction::CountWords, "Count Words".to_string()),
+                        MenuItem::Action(MenuAction::CountChars, "Count Characters".to_string()),
+                        MenuItem::Action(MenuAction::CountLines, "Count Lines".to_string()),
+                    ]),
+                ]
             } else {
-                // Show insert menu
-                FloatingMode::Menu {
-                    options: vec![
-                        MenuOption::InsertDate,
-                        MenuOption::InsertLorem,
-                        MenuOption::InsertBullets,
-                    ],
-                    selected: 0,
-                }
+                // Insert menu when no text is selected
+                vec![
+                    MenuItem::Category("Insert Date/Time".to_string(), vec![
+                        MenuItem::Action(MenuAction::InsertDate, "Insert Date".to_string()),
+                        MenuItem::Action(MenuAction::InsertTime, "Insert Time".to_string()),
+                        MenuItem::Action(MenuAction::InsertDateTime, "Insert Date & Time".to_string()),
+                    ]),
+                    MenuItem::Category("Insert Templates".to_string(), vec![
+                        MenuItem::Action(MenuAction::InsertLorem, "Lorem Ipsum".to_string()),
+                        MenuItem::Action(MenuAction::InsertBullets, "Bullet List".to_string()),
+                        MenuItem::Action(MenuAction::InsertNumbers, "Numbered List".to_string()),
+                        MenuItem::Action(MenuAction::InsertTodo, "TODO List".to_string()),
+                    ]),
+                ]
+            };
+
+            let mode = FloatingMode::Menu {
+                state: MenuState::new(root_items.clone()),
+                root_items,
             };
 
             self.floating_window = Some(FloatingWindow {
@@ -430,21 +519,21 @@ impl Editor {
         }
     }
 
-    pub fn apply_menu_option(&mut self, option: MenuOption) {
-        match option {
-            MenuOption::Uppercase => {
+    pub fn apply_menu_option(&mut self, action: MenuAction) {
+        match action {
+            MenuAction::Uppercase => {
                 if let Some(text) = self.get_selected_text() {
                     let transformed = text.to_uppercase();
                     self.replace_selection(transformed);
                 }
             }
-            MenuOption::Lowercase => {
+            MenuAction::Lowercase => {
                 if let Some(text) = self.get_selected_text() {
                     let transformed = text.to_lowercase();
                     self.replace_selection(transformed);
                 }
             }
-            MenuOption::Capitalize => {
+            MenuAction::Capitalize => {
                 if let Some(text) = self.get_selected_text() {
                     let transformed = text
                         .split_whitespace()
@@ -460,13 +549,13 @@ impl Editor {
                     self.replace_selection(transformed);
                 }
             }
-            MenuOption::Reverse => {
+            MenuAction::Reverse => {
                 if let Some(text) = self.get_selected_text() {
                     let transformed = text.chars().rev().collect();
                     self.replace_selection(transformed);
                 }
             }
-            MenuOption::InsertDate => {
+            MenuAction::InsertDate => {
                 use std::time::SystemTime;
                 let now = SystemTime::now()
                     .duration_since(SystemTime::UNIX_EPOCH)
@@ -478,13 +567,90 @@ impl Editor {
                 );
                 self.textarea.insert_str(&date);
             }
-            MenuOption::InsertLorem => {
+            MenuAction::InsertLorem => {
                 let lorem = "Lorem ipsum dolor sit amet, consectetur adipiscing elit.";
                 self.textarea.insert_str(lorem);
             }
-            MenuOption::InsertBullets => {
+            MenuAction::InsertBullets => {
                 let bullets = "• Item 1\n• Item 2\n• Item 3";
                 self.textarea.insert_str(bullets);
+            }
+            MenuAction::Base64Encode => {
+                if let Some(text) = self.get_selected_text() {
+                    use base64::{Engine as _, engine::general_purpose};
+                    let encoded = general_purpose::STANDARD.encode(text.as_bytes());
+                    self.replace_selection(encoded);
+                }
+            }
+            MenuAction::Base64Decode => {
+                if let Some(text) = self.get_selected_text() {
+                    use base64::{Engine as _, engine::general_purpose};
+                    if let Ok(decoded_bytes) = general_purpose::STANDARD.decode(text.as_bytes()) {
+                        if let Ok(decoded_str) = String::from_utf8(decoded_bytes) {
+                            self.replace_selection(decoded_str);
+                        }
+                    }
+                }
+            }
+            MenuAction::UrlEncode => {
+                if let Some(text) = self.get_selected_text() {
+                    let encoded = urlencoding::encode(&text).to_string();
+                    self.replace_selection(encoded);
+                }
+            }
+            MenuAction::UrlDecode => {
+                if let Some(text) = self.get_selected_text() {
+                    if let Ok(decoded) = urlencoding::decode(&text) {
+                        self.replace_selection(decoded.to_string());
+                    }
+                }
+            }
+            MenuAction::CountWords => {
+                if let Some(text) = self.get_selected_text() {
+                    let count = text.split_whitespace().count();
+                    let msg = format!("Word count: {}", count);
+                    // For now, just replace selection with count
+                    // Later we might want to show this in a status message
+                    self.textarea.insert_str(&msg);
+                }
+            }
+            MenuAction::CountChars => {
+                if let Some(text) = self.get_selected_text() {
+                    let count = text.chars().count();
+                    let msg = format!("Character count: {}", count);
+                    self.textarea.insert_str(&msg);
+                }
+            }
+            MenuAction::CountLines => {
+                if let Some(text) = self.get_selected_text() {
+                    let count = text.lines().count();
+                    let msg = format!("Line count: {}", count);
+                    self.textarea.insert_str(&msg);
+                }
+            }
+            MenuAction::InsertTime => {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap();
+                // Simple time format - could enhance with chrono crate later
+                let time = format!("{:02}:{:02}", (now.as_secs() / 3600) % 24, (now.as_secs() / 60) % 60);
+                self.textarea.insert_str(&time);
+            }
+            MenuAction::InsertDateTime => {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap();
+                // Simple date/time format - could enhance with chrono crate later
+                let datetime = format!("{}", now.as_secs());
+                self.textarea.insert_str(&datetime);
+            }
+            MenuAction::InsertNumbers => {
+                let numbers = "1.\n2.\n3.\n4.\n5.";
+                self.textarea.insert_str(numbers);
+            }
+            MenuAction::InsertTodo => {
+                let todos = "☐ Task 1\n☐ Task 2\n☐ Task 3";
+                self.textarea.insert_str(todos);
             }
         }
 

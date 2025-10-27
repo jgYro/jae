@@ -30,7 +30,14 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
 
             // Draw floating window with border
             let title = match &fw.mode {
-                FloatingMode::Menu { .. } => "Menu - Use ↑↓ to navigate, Enter to select",
+                FloatingMode::Menu { state, .. } => {
+                    if state.path.is_empty() {
+                        "Menu - C-l:enter C-h:back ↑↓:nav Enter:select"
+                    } else {
+                        // Show breadcrumb path
+                        &format!("Menu [{}] - C-l:enter C-h:back", state.path.join(" > "))
+                    }
+                },
                 FloatingMode::TextEdit => "Floating",
             };
 
@@ -48,24 +55,37 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
 
             // Render content based on mode
             match &fw.mode {
-                FloatingMode::Menu { options, selected } => {
+                FloatingMode::Menu { state, .. } => {
+                    use crate::editor::MenuItem;
                     // Create menu items
-                    let items: Vec<ListItem> = options
+                    let items: Vec<ListItem> = state.items
                         .iter()
                         .enumerate()
-                        .map(|(i, opt)| {
-                            let content = if i == *selected {
-                                format!("→ {}", opt.label())
-                            } else {
-                                format!("  {}", opt.label())
+                        .map(|(i, item)| {
+                            let (label, is_category) = match item {
+                                MenuItem::Category(name, _) => (format!("📁 {}", name), true),
+                                MenuItem::Action(_, label) => (label.clone(), false),
                             };
+
+                            let content = if i == state.selected {
+                                format!("→ {}", label)
+                            } else {
+                                format!("  {}", label)
+                            };
+
+                            let base_style = if is_category {
+                                Style::default().fg(Color::Cyan)
+                            } else {
+                                Style::default()
+                            };
+
                             ListItem::new(content).style(
-                                if i == *selected {
-                                    Style::default()
+                                if i == state.selected {
+                                    base_style
                                         .fg(Color::Yellow)
                                         .add_modifier(Modifier::BOLD)
                                 } else {
-                                    Style::default()
+                                    base_style
                                 }
                             )
                         })

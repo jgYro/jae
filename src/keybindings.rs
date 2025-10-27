@@ -99,29 +99,45 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
 fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
     if let Some(ref mut fw) = editor.floating_window {
         match &mut fw.mode {
-            crate::editor::FloatingMode::Menu { options, selected } => {
+            crate::editor::FloatingMode::Menu { state, root_items } => {
                 // Menu mode navigation
-                match key.code {
-                    KeyCode::Esc | KeyCode::Char('q') if key.modifiers == KeyModifiers::ALT => {
+                match (key.code, key.modifiers) {
+                    (KeyCode::Esc, _) | (KeyCode::Char('q'), KeyModifiers::ALT) => {
                         editor.floating_window = None;
                         editor.focus_floating = false;
                     }
-                    KeyCode::Up | KeyCode::Char('p') if key.modifiers == KeyModifiers::CONTROL => {
-                        if *selected > 0 {
-                            *selected -= 1;
+                    (KeyCode::Up, _) | (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
+                        if state.selected > 0 {
+                            state.selected -= 1;
                         }
                     }
-                    KeyCode::Down | KeyCode::Char('n') if key.modifiers == KeyModifiers::CONTROL => {
-                        if *selected < options.len() - 1 {
-                            *selected += 1;
+                    (KeyCode::Down, _) | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
+                        if state.selected < state.items.len() - 1 {
+                            state.selected += 1;
                         }
                     }
-                    KeyCode::Enter => {
-                        // Apply the selected option
-                        let option = options[*selected].clone();
-                        editor.apply_menu_option(option);
+                    // Enter category with C-l
+                    (KeyCode::Char('l'), KeyModifiers::CONTROL) | (KeyCode::Enter, _) => {
+                        match state.items.get(state.selected).cloned() {
+                            Some(crate::editor::MenuItem::Category(_, _)) => {
+                                state.enter_category();
+                            }
+                            Some(crate::editor::MenuItem::Action(action, _)) => {
+                                // Need to temporarily drop the borrow of fw
+                                let action_to_apply = action;
+                                editor.floating_window = None;
+                                editor.focus_floating = false;
+                                editor.apply_menu_option(action_to_apply);
+                                return true;
+                            }
+                            None => {}
+                        }
                     }
-                    KeyCode::Tab => {
+                    // Go back with C-h
+                    (KeyCode::Char('h'), KeyModifiers::CONTROL) => {
+                        state.go_back(root_items);
+                    }
+                    (KeyCode::Tab, _) => {
                         editor.focus_floating = false;
                     }
                     _ => {}
