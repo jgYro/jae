@@ -72,7 +72,7 @@ fn create_status_bar(editor: &Editor) -> Paragraph<'static> {
         Span::raw("")
     };
 
-    let help_items = vec![
+    let mut help_items = vec![
         ("C-a/e", "home/end"),
         ("C-f/b", "←→"),
         ("C-n/p", "↑↓"),
@@ -84,6 +84,11 @@ fn create_status_bar(editor: &Editor) -> Paragraph<'static> {
         ("M-q", "float"),
         ("C-g/ESC", "quit"),
     ];
+
+    // Show focus switching help when floating window is open
+    if editor.floating_window.is_some() {
+        help_items.insert(9, ("Tab/S-Tab", "focus"));
+    }
 
     let mut help_spans = Vec::new();
     for (i, (key, desc)) in help_items.iter().enumerate() {

@@ -55,6 +55,12 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
         (KeyCode::Char('q'), KeyModifiers::ALT) => {
             editor.toggle_floating_window();
         }
+        // Switch focus to floating window with Shift+Tab
+        (KeyCode::BackTab, _) => {
+            if editor.floating_window.is_some() && !editor.focus_floating {
+                editor.focus_floating = true;
+            }
+        }
 
         // Selection and mark - doesn't reset kill sequence
         (KeyCode::Char(' '), KeyModifiers::CONTROL) => {
