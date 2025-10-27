@@ -156,11 +156,14 @@ impl Default for Settings {
 pub struct Editor {
     pub textarea: TextArea<'static>,
     pub mark_active: bool,
+    pub mark_set: bool,  // Mark exists but may not be active (for C-SPC C-SPC)
+    pub mark_position: Option<(usize, usize)>,  // Store mark position separately
     pub kill_ring: KillRing,
     pub last_was_kill: bool,
     pub floating_window: Option<FloatingWindow>,
     pub focus_floating: bool,
     pub settings: Settings,
+    pub last_key: Option<(ratatui::crossterm::event::KeyCode, ratatui::crossterm::event::KeyModifiers)>,
 }
 
 impl Editor {
@@ -182,20 +185,46 @@ impl Editor {
         Self {
             textarea,
             mark_active: false,
+            mark_set: false,
+            mark_position: None,
             kill_ring: KillRing::new(),
             last_was_kill: false,
             floating_window: None,
             focus_floating: false,
             settings: Settings::default(),
+            last_key: None,
         }
     }
 
     pub fn set_mark(&mut self) {
-        if !self.mark_active {
-            self.textarea.start_selection();
-            self.mark_active = true;
+        let cursor_pos = self.textarea.cursor();
+
+        // Check if this is a double C-SPC (C-SPC C-SPC)
+        if self.last_key == Some((ratatui::crossterm::event::KeyCode::Char(' '), ratatui::crossterm::event::KeyModifiers::CONTROL)) {
+            // Second C-SPC: Set mark but deactivate region
+            if !self.mark_set {
+                self.mark_position = Some(cursor_pos);
+                self.mark_set = true;
+            }
+
+            if self.mark_active {
+                self.textarea.cancel_selection();
+                self.mark_active = false;
+            }
         } else {
-            self.cancel_mark();
+            // First C-SPC: Set mark and activate region
+            if !self.mark_active {
+                // Setting new mark
+                self.mark_position = Some(cursor_pos);
+                self.mark_set = true;
+                self.textarea.start_selection();
+                self.mark_active = true;
+            } else {
+                // If already active, deactivate (toggle behavior)
+                self.textarea.cancel_selection();
+                self.mark_active = false;
+                // Keep mark position for later use
+            }
         }
         // Don't reset last_was_kill when setting mark
     }
@@ -203,6 +232,63 @@ impl Editor {
     pub fn cancel_mark(&mut self) {
         self.textarea.cancel_selection();
         self.mark_active = false;
+        // Note: We keep mark_set and mark_position for navigation
+    }
+
+    pub fn swap_cursor_mark(&mut self) {
+        // C-x C-x exchanges point and mark
+
+        if !self.mark_set || self.mark_position.is_none() {
+            // No mark to swap with - just set mark here
+            self.set_mark();
+            return;
+        }
+
+        let current_cursor = self.textarea.cursor();
+        let saved_mark = self.mark_position.unwrap();
+
+        // If they're the same, just activate region if needed
+        if current_cursor == saved_mark {
+            if !self.mark_active {
+                self.textarea.start_selection();
+                self.mark_active = true;
+            }
+            return;
+        }
+
+        // Save the current cursor position as the new mark
+        self.mark_position = Some(current_cursor);
+
+        if self.mark_active {
+            // Selection is active - we need to preserve it while swapping ends
+            // The selection should remain between the same two points,
+            // but the cursor should move to the other end
+
+            // Cancel the current selection
+            self.textarea.cancel_selection();
+
+            // Move cursor to where we want the new anchor (current cursor position)
+            self.textarea.move_cursor(CursorMove::Jump(current_cursor.0 as u16, current_cursor.1 as u16));
+
+            // Start selection from current cursor position
+            self.textarea.start_selection();
+
+            // Move cursor to the saved mark (where cursor will end up)
+            self.textarea.move_cursor(CursorMove::Jump(saved_mark.0 as u16, saved_mark.1 as u16));
+
+            self.mark_active = true;
+        } else {
+            // No active selection, create one between cursor and mark
+            // Move to current cursor position first (will be the new anchor)
+            self.textarea.move_cursor(CursorMove::Jump(current_cursor.0 as u16, current_cursor.1 as u16));
+
+            // Start selection from here
+            self.textarea.start_selection();
+            self.mark_active = true;
+
+            // Move to saved mark (where cursor ends up)
+            self.textarea.move_cursor(CursorMove::Jump(saved_mark.0 as u16, saved_mark.1 as u16));
+        }
     }
 
     pub fn get_selected_text(&self) -> Option<String> {

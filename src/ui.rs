@@ -239,6 +239,7 @@ fn create_status_bar(editor: &Editor) -> Paragraph<'static> {
         ("C-n/p", "↑↓"),
         ("M-f/b", "word"),
         ("C-SPC", "mark"),
+        ("C-x C-x", "swap"),
         ("C-w", "kill"),
         ("M-w", "copy"),
         ("C-y", "yank"),
@@ -249,7 +250,7 @@ fn create_status_bar(editor: &Editor) -> Paragraph<'static> {
 
     // Show focus switching help when floating window is open
     if editor.floating_window.is_some() {
-        help_items.insert(9, ("Tab/S-Tab", "focus"));
+        help_items.insert(10, ("Tab/S-Tab", "focus"));
     }
 
     let mut help_spans = Vec::new();

@@ -13,6 +13,21 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
         return handle_floating_input(editor, key);
     }
 
+    // Handle C-x C-x sequence
+    if editor.last_key == Some((KeyCode::Char('x'), KeyModifiers::CONTROL)) {
+        if matches!((key.code, key.modifiers), (KeyCode::Char('x'), KeyModifiers::CONTROL)) {
+            editor.swap_cursor_mark();
+            editor.last_key = None;
+            return true;
+        }
+    }
+
+    // Clear last_key for any key that isn't C-SPC or C-x
+    if !matches!((key.code, key.modifiers), (KeyCode::Char(' '), KeyModifiers::CONTROL))
+        && !matches!((key.code, key.modifiers), (KeyCode::Char('x'), KeyModifiers::CONTROL)) {
+        editor.last_key = None;
+    }
+
     // Handle Emacs keybindings
     match (key.code, key.modifiers) {
         // Basic movement - these don't reset kill sequence
@@ -69,6 +84,13 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
         // Selection and mark - doesn't reset kill sequence
         (KeyCode::Char(' '), KeyModifiers::CONTROL) => {
             editor.set_mark();
+            // Store this key for detecting C-SPC C-SPC
+            editor.last_key = Some((KeyCode::Char(' '), KeyModifiers::CONTROL));
+        }
+        // C-x prefix for commands
+        (KeyCode::Char('x'), KeyModifiers::CONTROL) => {
+            // Store for potential C-x sequences
+            editor.last_key = Some((KeyCode::Char('x'), KeyModifiers::CONTROL));
         }
 
         // Kill and yank operations
