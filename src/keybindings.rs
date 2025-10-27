@@ -173,6 +173,8 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
             }
             crate::editor::FloatingMode::Settings { items, selected } => {
                 // Settings mode navigation
+                // Store values we need before handling
+                let selected_idx = *selected;
                 match (key.code, key.modifiers) {
                     (KeyCode::Esc, _) | (KeyCode::Char('?'), KeyModifiers::ALT) => {
                         editor.floating_window = None;
@@ -208,31 +210,105 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                     // Adjust number values with C-h/C-l (consistent with directory navigation)
                     (KeyCode::Left, _) | (KeyCode::Char('h'), KeyModifiers::CONTROL) => {
                         if let Some(item) = items.get_mut(*selected) {
-                            if let crate::editor::SettingValue::Number(n) = &mut item.value {
-                                if *n > 10 {
-                                    *n -= 5;
-                                    match item.name.as_str() {
-                                        "Window Width" => editor.settings.floating_window_width = *n,
-                                        "Window Height" => editor.settings.floating_window_height = *n,
-                                        _ => {}
+                            let name = item.name.clone();
+                            match &mut item.value {
+                                crate::editor::SettingValue::Number(n) => {
+                                    if *n > 10 {
+                                        *n -= 5;
+                                        match name.as_str() {
+                                            "Window Width" => editor.settings.floating_window_width = *n,
+                                            "Window Height" => editor.settings.floating_window_height = *n,
+                                            _ => {}
+                                        }
                                     }
                                 }
+                                crate::editor::SettingValue::Choice { current, .. } => {
+                                    if *current > 0 {
+                                        *current -= 1;
+                                    }
+                                }
+                                _ => {}
                             }
                         }
+                        // Extract the values we need before calling editor methods
+                        let update_info = items.get(selected_idx).and_then(|item| {
+                            match (&item.value, item.name.as_str()) {
+                                (crate::editor::SettingValue::Choice { current, .. }, "Cursor Color") => {
+                                    Some((true, *current))
+                                }
+                                (crate::editor::SettingValue::Choice { current, .. }, "Selection Color") => {
+                                    Some((false, *current))
+                                }
+                                _ => None
+                            }
+                        });
+
+                        // Drop the mutable reference to fw before calling editor methods
+                        drop(fw);
+
+                        // Now update colors
+                        if let Some((is_cursor, index)) = update_info {
+                            if is_cursor {
+                                editor.settings.cursor_color = editor.index_to_color(index, false);
+                            } else {
+                                editor.settings.selection_color = editor.index_to_color(index, true);
+                            }
+                            editor.update_textarea_colors();
+                        }
+
+                        // Return early since we dropped fw
+                        return true;
                     }
                     (KeyCode::Right, _) | (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
                         if let Some(item) = items.get_mut(*selected) {
-                            if let crate::editor::SettingValue::Number(n) = &mut item.value {
-                                if *n < 100 {
-                                    *n += 5;
-                                    match item.name.as_str() {
-                                        "Window Width" => editor.settings.floating_window_width = *n,
-                                        "Window Height" => editor.settings.floating_window_height = *n,
-                                        _ => {}
+                            let name = item.name.clone();
+                            match &mut item.value {
+                                crate::editor::SettingValue::Number(n) => {
+                                    if *n < 100 {
+                                        *n += 5;
+                                        match name.as_str() {
+                                            "Window Width" => editor.settings.floating_window_width = *n,
+                                            "Window Height" => editor.settings.floating_window_height = *n,
+                                            _ => {}
+                                        }
                                     }
                                 }
+                                crate::editor::SettingValue::Choice { current, options } => {
+                                    if *current < options.len() - 1 {
+                                        *current += 1;
+                                    }
+                                }
+                                _ => {}
                             }
                         }
+                        // Extract the values we need before calling editor methods
+                        let update_info = items.get(selected_idx).and_then(|item| {
+                            match (&item.value, item.name.as_str()) {
+                                (crate::editor::SettingValue::Choice { current, .. }, "Cursor Color") => {
+                                    Some((true, *current))
+                                }
+                                (crate::editor::SettingValue::Choice { current, .. }, "Selection Color") => {
+                                    Some((false, *current))
+                                }
+                                _ => None
+                            }
+                        });
+
+                        // Drop the mutable reference to fw before calling editor methods
+                        drop(fw);
+
+                        // Now update colors
+                        if let Some((is_cursor, index)) = update_info {
+                            if is_cursor {
+                                editor.settings.cursor_color = editor.index_to_color(index, false);
+                            } else {
+                                editor.settings.selection_color = editor.index_to_color(index, true);
+                            }
+                            editor.update_textarea_colors();
+                        }
+
+                        // Return early since we dropped fw
+                        return true;
                     }
                     _ => {}
                 }

@@ -140,6 +140,8 @@ pub struct Settings {
     pub floating_window_width: u16,
     pub floating_window_height: u16,
     pub show_preview: bool,
+    pub cursor_color: ratatui::style::Color,
+    pub selection_color: ratatui::style::Color,
 }
 
 impl Default for Settings {
@@ -149,6 +151,8 @@ impl Default for Settings {
             floating_window_width: 60,
             floating_window_height: 20,
             show_preview: true,
+            cursor_color: ratatui::style::Color::Red,
+            selection_color: ratatui::style::Color::Magenta,
         }
     }
 }
@@ -167,19 +171,78 @@ pub struct Editor {
 }
 
 impl Editor {
+    fn get_color_index(&self, color: ratatui::style::Color) -> usize {
+        match color {
+            ratatui::style::Color::Red => 0,
+            ratatui::style::Color::Green => 1,
+            ratatui::style::Color::Yellow => 2,
+            ratatui::style::Color::Blue => 3,
+            ratatui::style::Color::Magenta => 4,
+            ratatui::style::Color::Cyan => 5,
+            ratatui::style::Color::White => 6,
+            ratatui::style::Color::LightBlue => 6, // Map LightBlue to last index for selection
+            _ => 0,
+        }
+    }
+
+    pub fn index_to_color(&self, index: usize, for_selection: bool) -> ratatui::style::Color {
+        if for_selection {
+            match index {
+                0 => ratatui::style::Color::Red,
+                1 => ratatui::style::Color::Green,
+                2 => ratatui::style::Color::Yellow,
+                3 => ratatui::style::Color::Blue,
+                4 => ratatui::style::Color::Magenta,
+                5 => ratatui::style::Color::Cyan,
+                6 => ratatui::style::Color::LightBlue,
+                _ => ratatui::style::Color::Magenta,
+            }
+        } else {
+            match index {
+                0 => ratatui::style::Color::Red,
+                1 => ratatui::style::Color::Green,
+                2 => ratatui::style::Color::Yellow,
+                3 => ratatui::style::Color::Blue,
+                4 => ratatui::style::Color::Magenta,
+                5 => ratatui::style::Color::Cyan,
+                6 => ratatui::style::Color::White,
+                _ => ratatui::style::Color::Red,
+            }
+        }
+    }
+
+    pub fn update_textarea_colors(&mut self) {
+        self.textarea.set_cursor_style(
+            ratatui::style::Style::default()
+                .bg(self.settings.cursor_color)
+                .fg(ratatui::style::Color::White)
+                .add_modifier(ratatui::style::Modifier::BOLD)
+        );
+        self.textarea.set_selection_style(
+            ratatui::style::Style::default()
+                .bg(self.settings.selection_color)
+                .fg(ratatui::style::Color::White)
+        );
+    }
+
     pub fn new() -> Self {
         let mut textarea = TextArea::default();
-        // Set cursor to be a visible block with inverted colors
+        let settings = Settings::default();
+
+        // Set cursor to be a visible block with red background
         textarea.set_cursor_style(
             ratatui::style::Style::default()
-                .add_modifier(ratatui::style::Modifier::REVERSED)
+                .bg(settings.cursor_color)
+                .fg(ratatui::style::Color::White)
+                .add_modifier(ratatui::style::Modifier::BOLD)
         );
         // Remove underline from the current line
         textarea.set_cursor_line_style(ratatui::style::Style::default());
-        // Set selection style to be visible (highlighted with reversed colors)
+        // Set selection style to be magenta/purple background (distinct from cursor)
         textarea.set_selection_style(
             ratatui::style::Style::default()
-                .add_modifier(ratatui::style::Modifier::REVERSED)
+                .bg(settings.selection_color)
+                .fg(ratatui::style::Color::White)
         );
 
         Self {
@@ -191,7 +254,7 @@ impl Editor {
             last_was_kill: false,
             floating_window: None,
             focus_floating: false,
-            settings: Settings::default(),
+            settings,
             last_key: None,
         }
     }
@@ -572,6 +635,38 @@ impl Editor {
                 name: "Window Height".to_string(),
                 value: SettingValue::Number(self.settings.floating_window_height),
                 description: "Height of floating windows".to_string(),
+            },
+            SettingItem {
+                name: "Cursor Color".to_string(),
+                value: SettingValue::Choice {
+                    current: self.get_color_index(self.settings.cursor_color),
+                    options: vec![
+                        "Red".to_string(),
+                        "Green".to_string(),
+                        "Yellow".to_string(),
+                        "Blue".to_string(),
+                        "Magenta".to_string(),
+                        "Cyan".to_string(),
+                        "White".to_string(),
+                    ],
+                },
+                description: "Color of the cursor".to_string(),
+            },
+            SettingItem {
+                name: "Selection Color".to_string(),
+                value: SettingValue::Choice {
+                    current: self.get_color_index(self.settings.selection_color),
+                    options: vec![
+                        "Red".to_string(),
+                        "Green".to_string(),
+                        "Yellow".to_string(),
+                        "Blue".to_string(),
+                        "Magenta".to_string(),
+                        "Cyan".to_string(),
+                        "LightBlue".to_string(),
+                    ],
+                },
+                description: "Color of selected text".to_string(),
             },
         ];
 
