@@ -55,6 +55,10 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
         (KeyCode::Char('q'), KeyModifiers::ALT) => {
             editor.toggle_floating_window();
         }
+        // Settings menu
+        (KeyCode::Char('?'), KeyModifiers::ALT) => {
+            editor.open_settings_menu();
+        }
         // Switch focus to floating window with Shift+Tab
         (KeyCode::BackTab, _) => {
             if editor.floating_window.is_some() && !editor.focus_floating {
@@ -99,7 +103,7 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
 fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
     if let Some(ref mut fw) = editor.floating_window {
         match &mut fw.mode {
-            crate::editor::FloatingMode::Menu { state, root_items } => {
+            crate::editor::FloatingMode::Menu { state, root_items, .. } => {
                 // Menu mode navigation
                 match (key.code, key.modifiers) {
                     (KeyCode::Esc, _) | (KeyCode::Char('q'), KeyModifiers::ALT) => {
@@ -109,11 +113,13 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                     (KeyCode::Up, _) | (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
                         if state.selected > 0 {
                             state.selected -= 1;
+                            editor.update_menu_preview();
                         }
                     }
                     (KeyCode::Down, _) | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
                         if state.selected < state.items.len() - 1 {
                             state.selected += 1;
+                            editor.update_menu_preview();
                         }
                     }
                     // Enter category with C-l
@@ -139,6 +145,72 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                     }
                     (KeyCode::Tab, _) => {
                         editor.focus_floating = false;
+                    }
+                    _ => {}
+                }
+            }
+            crate::editor::FloatingMode::Settings { items, selected } => {
+                // Settings mode navigation
+                match (key.code, key.modifiers) {
+                    (KeyCode::Esc, _) | (KeyCode::Char('?'), KeyModifiers::ALT) => {
+                        editor.floating_window = None;
+                        editor.focus_floating = false;
+                    }
+                    (KeyCode::Up, _) | (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
+                        if *selected > 0 {
+                            *selected -= 1;
+                        }
+                    }
+                    (KeyCode::Down, _) | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
+                        if *selected < items.len() - 1 {
+                            *selected += 1;
+                        }
+                    }
+                    // Toggle boolean or adjust number values
+                    (KeyCode::Enter, _) | (KeyCode::Char(' '), _) => {
+                        if let Some(item) = items.get_mut(*selected) {
+                            match &mut item.value {
+                                crate::editor::SettingValue::Bool(b) => {
+                                    *b = !*b;
+                                    // Apply the setting
+                                    match item.name.as_str() {
+                                        "Show Metadata" => editor.settings.show_metadata = *b,
+                                        "Show Preview" => editor.settings.show_preview = *b,
+                                        _ => {}
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    // Adjust number values with C-h/C-l (consistent with directory navigation)
+                    (KeyCode::Left, _) | (KeyCode::Char('h'), KeyModifiers::CONTROL) => {
+                        if let Some(item) = items.get_mut(*selected) {
+                            if let crate::editor::SettingValue::Number(n) = &mut item.value {
+                                if *n > 10 {
+                                    *n -= 5;
+                                    match item.name.as_str() {
+                                        "Window Width" => editor.settings.floating_window_width = *n,
+                                        "Window Height" => editor.settings.floating_window_height = *n,
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    (KeyCode::Right, _) | (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
+                        if let Some(item) = items.get_mut(*selected) {
+                            if let crate::editor::SettingValue::Number(n) = &mut item.value {
+                                if *n < 100 {
+                                    *n += 5;
+                                    match item.name.as_str() {
+                                        "Window Width" => editor.settings.floating_window_width = *n,
+                                        "Window Height" => editor.settings.floating_window_height = *n,
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
                     }
                     _ => {}
                 }

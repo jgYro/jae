@@ -99,7 +99,30 @@ impl MenuState {
 
 pub enum FloatingMode {
     TextEdit,
-    Menu { state: MenuState, root_items: Vec<MenuItem> },
+    Menu {
+        state: MenuState,
+        root_items: Vec<MenuItem>,
+        preview: Option<String>,
+        metadata: Option<String>,
+    },
+    Settings {
+        items: Vec<SettingItem>,
+        selected: usize,
+    },
+}
+
+#[derive(Clone)]
+pub struct SettingItem {
+    pub name: String,
+    pub value: SettingValue,
+    pub description: String,
+}
+
+#[derive(Clone)]
+pub enum SettingValue {
+    Bool(bool),
+    Number(u16),
+    Choice { current: usize, options: Vec<String> },
 }
 
 pub struct FloatingWindow {
@@ -112,6 +135,24 @@ pub struct FloatingWindow {
     pub mode: FloatingMode,
 }
 
+pub struct Settings {
+    pub show_metadata: bool,
+    pub floating_window_width: u16,
+    pub floating_window_height: u16,
+    pub show_preview: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            show_metadata: true,
+            floating_window_width: 60,
+            floating_window_height: 20,
+            show_preview: true,
+        }
+    }
+}
+
 pub struct Editor {
     pub textarea: TextArea<'static>,
     pub mark_active: bool,
@@ -119,6 +160,7 @@ pub struct Editor {
     pub last_was_kill: bool,
     pub floating_window: Option<FloatingWindow>,
     pub focus_floating: bool,
+    pub settings: Settings,
 }
 
 impl Editor {
@@ -144,6 +186,7 @@ impl Editor {
             last_was_kill: false,
             floating_window: None,
             focus_floating: false,
+            settings: Settings::default(),
         }
     }
 
@@ -417,6 +460,161 @@ impl Editor {
         }
     }
 
+    pub fn open_settings_menu(&mut self) {
+        // Close any existing floating window
+        self.floating_window = None;
+        self.focus_floating = false;
+
+        // Create settings items
+        let settings_items = vec![
+            SettingItem {
+                name: "Show Metadata".to_string(),
+                value: SettingValue::Bool(self.settings.show_metadata),
+                description: "Display metadata for analysis actions".to_string(),
+            },
+            SettingItem {
+                name: "Show Preview".to_string(),
+                value: SettingValue::Bool(self.settings.show_preview),
+                description: "Show preview of transformations".to_string(),
+            },
+            SettingItem {
+                name: "Window Width".to_string(),
+                value: SettingValue::Number(self.settings.floating_window_width),
+                description: "Width of floating windows".to_string(),
+            },
+            SettingItem {
+                name: "Window Height".to_string(),
+                value: SettingValue::Number(self.settings.floating_window_height),
+                description: "Height of floating windows".to_string(),
+            },
+        ];
+
+        let mode = FloatingMode::Settings {
+            items: settings_items,
+            selected: 0,
+        };
+
+        // Position settings window
+        let x = 10;
+        let y = 5;
+
+        let mut floating_textarea = TextArea::default();
+        floating_textarea.set_cursor_style(
+            ratatui::style::Style::default()
+                .add_modifier(ratatui::style::Modifier::REVERSED)
+        );
+
+        self.floating_window = Some(FloatingWindow {
+            textarea: floating_textarea,
+            visible: true,
+            x,
+            y,
+            width: 50,
+            height: 15,
+            mode,
+        });
+        self.focus_floating = true;
+    }
+
+    pub fn update_menu_preview(&mut self) {
+        // First, get the necessary data without borrowing self mutably
+        let (action_opt, selected_text_opt) = if let Some(ref fw) = self.floating_window {
+            if let FloatingMode::Menu { state, .. } = &fw.mode {
+                if let Some(MenuItem::Action(action, _)) = state.items.get(state.selected) {
+                    (Some(action.clone()), self.get_selected_text())
+                } else {
+                    (None, None)
+                }
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
+
+        // Now update preview and metadata with the collected data
+        if let (Some(action), Some(selected_text)) = (action_opt, selected_text_opt) {
+            let preview_text = self.generate_preview(&action, &selected_text);
+            let metadata_text = if self.settings.show_metadata {
+                self.generate_metadata(&action, &selected_text)
+            } else {
+                None
+            };
+
+            // Finally, update the floating window
+            if let Some(ref mut fw) = self.floating_window {
+                if let FloatingMode::Menu { preview, metadata, .. } = &mut fw.mode {
+                    *preview = preview_text;
+                    *metadata = metadata_text;
+                }
+            }
+        } else {
+            // Clear preview and metadata if no action selected
+            if let Some(ref mut fw) = self.floating_window {
+                if let FloatingMode::Menu { preview, metadata, .. } = &mut fw.mode {
+                    *preview = None;
+                    *metadata = None;
+                }
+            }
+        }
+    }
+
+    fn generate_preview(&self, action: &MenuAction, text: &str) -> Option<String> {
+        if !self.settings.show_preview {
+            return None;
+        }
+
+        // Limit preview length
+        let preview_text = if text.len() > 50 {
+            format!("{}...", &text[..50])
+        } else {
+            text.to_string()
+        };
+
+        match action {
+            MenuAction::Uppercase => Some(preview_text.to_uppercase()),
+            MenuAction::Lowercase => Some(preview_text.to_lowercase()),
+            MenuAction::Capitalize => {
+                Some(preview_text
+                    .split_whitespace()
+                    .map(|word| {
+                        let mut chars = word.chars();
+                        match chars.next() {
+                            None => String::new(),
+                            Some(first) => first.to_uppercase().chain(chars.as_str().to_lowercase().chars()).collect(),
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" "))
+            }
+            MenuAction::Reverse => Some(preview_text.chars().rev().collect()),
+            MenuAction::Base64Encode => {
+                use base64::{Engine as _, engine::general_purpose};
+                Some(general_purpose::STANDARD.encode(preview_text.as_bytes()))
+            }
+            _ => None,
+        }
+    }
+
+    fn generate_metadata(&self, action: &MenuAction, text: &str) -> Option<String> {
+        match action {
+            MenuAction::CountWords => {
+                let count = text.split_whitespace().count();
+                Some(format!("Words: {}", count))
+            }
+            MenuAction::CountChars => {
+                let count = text.chars().count();
+                let bytes = text.len();
+                Some(format!("Chars: {} | Bytes: {}", count, bytes))
+            }
+            MenuAction::CountLines => {
+                let count = text.lines().count();
+                Some(format!("Lines: {}", count))
+            }
+            _ => None,
+        }
+    }
+
     pub fn toggle_floating_window(&mut self) {
         if self.floating_window.is_some() {
             // Close floating window
@@ -489,6 +687,8 @@ impl Editor {
             let mode = FloatingMode::Menu {
                 state: MenuState::new(root_items.clone()),
                 root_items,
+                preview: None,
+                metadata: None,
             };
 
             self.floating_window = Some(FloatingWindow {
@@ -496,11 +696,14 @@ impl Editor {
                 visible: true,
                 x,
                 y,
-                width: 40,
-                height: 10,
+                width: self.settings.floating_window_width,
+                height: self.settings.floating_window_height,
                 mode,
             });
             self.focus_floating = true;
+
+            // Generate initial preview if applicable
+            self.update_menu_preview();
 
             // Maintain the mark_active state
             // The selection in main textarea should remain intact
@@ -654,6 +857,11 @@ impl Editor {
             }
         }
 
+        // Cancel mark/selection after applying action
+        if self.mark_active {
+            self.cancel_mark();
+        }
+
         // Close floating window after applying
         self.floating_window = None;
         self.focus_floating = false;
@@ -665,6 +873,6 @@ impl Editor {
         // Insert new text
         self.textarea.insert_str(&new_text);
         // Cancel mark
-        self.mark_active = false;
+        self.cancel_mark();
     }
 }

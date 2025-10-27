@@ -38,6 +38,7 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
                         &format!("Menu [{}] - C-l:enter C-h:back", state.path.join(" > "))
                     }
                 },
+                FloatingMode::Settings { .. } => "Settings - ↑↓:nav Space:toggle C-h/C-l:adjust ESC:close",
                 FloatingMode::TextEdit => "Floating",
             };
 
@@ -55,9 +56,37 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
 
             // Render content based on mode
             match &fw.mode {
-                FloatingMode::Menu { state, .. } => {
+                FloatingMode::Menu { state, preview, metadata, .. } => {
                     use crate::editor::MenuItem;
-                    // Create menu items
+
+                    // Split area for menu, preview, and metadata
+                    let has_preview = preview.is_some();
+                    let has_metadata = metadata.is_some();
+
+                    let chunks = if has_preview || has_metadata {
+                        let constraints = if has_preview && has_metadata {
+                            vec![
+                                Constraint::Percentage(50),  // Menu
+                                Constraint::Percentage(30),  // Preview
+                                Constraint::Percentage(20),  // Metadata
+                            ]
+                        } else if has_preview {
+                            vec![
+                                Constraint::Percentage(60),  // Menu
+                                Constraint::Percentage(40),  // Preview
+                            ]
+                        } else {
+                            vec![
+                                Constraint::Percentage(70),  // Menu
+                                Constraint::Percentage(30),  // Metadata
+                            ]
+                        };
+                        Layout::vertical(constraints).split(inner_area)
+                    } else {
+                        Layout::vertical(vec![Constraint::Percentage(100)]).split(inner_area)
+                    };
+
+                    // Render menu items
                     let items: Vec<ListItem> = state.items
                         .iter()
                         .enumerate()
@@ -92,6 +121,81 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
                         .collect();
 
                     let list = List::new(items);
+                    frame.render_widget(list, chunks[0]);
+
+                    // Render preview if available
+                    if let Some(preview_text) = preview {
+                        if has_preview && has_metadata {
+                            let preview_widget = Paragraph::new(preview_text.clone())
+                                .block(Block::default()
+                                    .borders(Borders::TOP)
+                                    .title("Preview")
+                                    .border_style(Style::default().fg(Color::DarkGray)));
+                            frame.render_widget(preview_widget, chunks[1]);
+                        } else if has_preview {
+                            let preview_widget = Paragraph::new(preview_text.clone())
+                                .block(Block::default()
+                                    .borders(Borders::TOP)
+                                    .title("Preview")
+                                    .border_style(Style::default().fg(Color::DarkGray)));
+                            frame.render_widget(preview_widget, chunks[1]);
+                        }
+                    }
+
+                    // Render metadata if available
+                    if let Some(metadata_text) = metadata {
+                        let metadata_idx = if has_preview && has_metadata { 2 } else { 1 };
+                        let metadata_widget = Paragraph::new(metadata_text.clone())
+                            .block(Block::default()
+                                .borders(Borders::TOP)
+                                .title("Metadata")
+                                .border_style(Style::default().fg(Color::DarkGray)));
+                        frame.render_widget(metadata_widget, chunks[metadata_idx]);
+                    }
+                }
+                FloatingMode::Settings { items, selected } => {
+                    use crate::editor::SettingValue;
+
+                    // Create setting items display
+                    let display_items: Vec<ListItem> = items
+                        .iter()
+                        .enumerate()
+                        .map(|(i, item)| {
+                            let value_str = match &item.value {
+                                SettingValue::Bool(b) => if *b { "[✓]" } else { "[ ]" },
+                                SettingValue::Number(n) => &format!("<{}>", n),
+                                SettingValue::Choice { current, options } => {
+                                    &format!("[{}]", options.get(*current).unwrap_or(&String::new()))
+                                }
+                            };
+
+                            let content = if i == *selected {
+                                format!("→ {} {}", item.name, value_str)
+                            } else {
+                                format!("  {} {}", item.name, value_str)
+                            };
+
+                            let mut spans = vec![Span::raw(content)];
+                            if i == *selected {
+                                spans.push(Span::styled(
+                                    format!(" - {}", item.description),
+                                    Style::default().fg(Color::DarkGray)
+                                ));
+                            }
+
+                            ListItem::new(Line::from(spans)).style(
+                                if i == *selected {
+                                    Style::default()
+                                        .fg(Color::Yellow)
+                                        .add_modifier(Modifier::BOLD)
+                                } else {
+                                    Style::default()
+                                }
+                            )
+                        })
+                        .collect();
+
+                    let list = List::new(display_items);
                     frame.render_widget(list, inner_area);
                 }
                 FloatingMode::TextEdit => {
@@ -138,7 +242,8 @@ fn create_status_bar(editor: &Editor) -> Paragraph<'static> {
         ("C-w", "kill"),
         ("M-w", "copy"),
         ("C-y", "yank"),
-        ("M-q", "float"),
+        ("M-q", "menu"),
+        ("M-?", "settings"),
         ("C-g/ESC", "quit"),
     ];
 
