@@ -1,5 +1,6 @@
 use crate::kill_ring::KillRing;
 use tui_textarea::{CursorMove, TextArea};
+use std::cmp::min;
 
 #[derive(Clone)]
 pub enum MenuAction {
@@ -171,6 +172,28 @@ pub struct Editor {
 }
 
 impl Editor {
+    fn char_index_to_byte_index(s: &str, char_idx: usize) -> usize {
+        s.char_indices()
+            .nth(char_idx)
+            .map(|(byte_idx, _)| byte_idx)
+            .unwrap_or(s.len())
+    }
+
+    fn safe_string_slice(s: &str, start_char: usize, end_char: usize) -> String {
+        let start_byte = Self::char_index_to_byte_index(s, start_char);
+        let end_byte = if end_char >= s.chars().count() {
+            s.len()
+        } else {
+            Self::char_index_to_byte_index(s, end_char)
+        };
+
+        if start_byte <= end_byte && end_byte <= s.len() {
+            s[start_byte..end_byte].to_string()
+        } else {
+            String::new()
+        }
+    }
+
     fn get_color_index(&self, color: ratatui::style::Color) -> usize {
         match color {
             ratatui::style::Color::Red => 0,
@@ -262,6 +285,15 @@ impl Editor {
     pub fn set_mark(&mut self) {
         let cursor_pos = self.textarea.cursor();
 
+        // Validate cursor position is within document bounds
+        let lines = self.textarea.lines();
+        if cursor_pos.0 >= lines.len() {
+            return;
+        }
+        if cursor_pos.0 < lines.len() && cursor_pos.1 > lines[cursor_pos.0].chars().count() {
+            return;
+        }
+
         // Check if this is a double C-SPC (C-SPC C-SPC)
         if self.last_key == Some((ratatui::crossterm::event::KeyCode::Char(' '), ratatui::crossterm::event::KeyModifiers::CONTROL)) {
             // Second C-SPC: Set mark but deactivate region
@@ -310,6 +342,17 @@ impl Editor {
         let current_cursor = self.textarea.cursor();
         let saved_mark = self.mark_position.unwrap();
 
+        // Validate both positions are still within document bounds
+        let lines = self.textarea.lines();
+        if saved_mark.0 >= lines.len() || current_cursor.0 >= lines.len() {
+            // Mark or cursor is out of bounds, reset mark
+            self.mark_position = None;
+            self.mark_set = false;
+            self.mark_active = false;
+            self.textarea.cancel_selection();
+            return;
+        }
+
         // If they're the same, just activate region if needed
         if current_cursor == saved_mark {
             if !self.mark_active {
@@ -331,26 +374,36 @@ impl Editor {
             self.textarea.cancel_selection();
 
             // Move cursor to where we want the new anchor (current cursor position)
-            self.textarea.move_cursor(CursorMove::Jump(current_cursor.0 as u16, current_cursor.1 as u16));
+            // Use saturating cast to prevent overflow for large files
+            let jump_row = min(current_cursor.0, u16::MAX as usize) as u16;
+            let jump_col = min(current_cursor.1, u16::MAX as usize) as u16;
+            self.textarea.move_cursor(CursorMove::Jump(jump_row, jump_col));
 
             // Start selection from current cursor position
             self.textarea.start_selection();
 
             // Move cursor to the saved mark (where cursor will end up)
-            self.textarea.move_cursor(CursorMove::Jump(saved_mark.0 as u16, saved_mark.1 as u16));
+            let mark_row = min(saved_mark.0, u16::MAX as usize) as u16;
+            let mark_col = min(saved_mark.1, u16::MAX as usize) as u16;
+            self.textarea.move_cursor(CursorMove::Jump(mark_row, mark_col));
 
             self.mark_active = true;
         } else {
             // No active selection, create one between cursor and mark
             // Move to current cursor position first (will be the new anchor)
-            self.textarea.move_cursor(CursorMove::Jump(current_cursor.0 as u16, current_cursor.1 as u16));
+            // Use saturating cast to prevent overflow for large files
+            let jump_row = min(current_cursor.0, u16::MAX as usize) as u16;
+            let jump_col = min(current_cursor.1, u16::MAX as usize) as u16;
+            self.textarea.move_cursor(CursorMove::Jump(jump_row, jump_col));
 
             // Start selection from here
             self.textarea.start_selection();
             self.mark_active = true;
 
             // Move to saved mark (where cursor ends up)
-            self.textarea.move_cursor(CursorMove::Jump(saved_mark.0 as u16, saved_mark.1 as u16));
+            let mark_row = min(saved_mark.0, u16::MAX as usize) as u16;
+            let mark_col = min(saved_mark.1, u16::MAX as usize) as u16;
+            self.textarea.move_cursor(CursorMove::Jump(mark_row, mark_col));
         }
     }
 
@@ -453,15 +506,21 @@ impl Editor {
         }
 
         let line = &lines[row];
+        let chars: Vec<char> = line.chars().collect();
+        let char_count = chars.len();
         let mut new_col = col;
 
-        // Skip current word
-        while new_col < line.len() && !line.chars().nth(new_col).unwrap_or(' ').is_whitespace() {
+        // Skip current word (including punctuation as word boundaries)
+        while new_col < char_count {
+            let ch = chars[new_col];
+            if ch.is_whitespace() || (!ch.is_alphanumeric() && ch != '_') {
+                break;
+            }
             new_col += 1;
         }
 
-        // Skip whitespace
-        while new_col < line.len() && line.chars().nth(new_col).unwrap_or(' ').is_whitespace() {
+        // Skip whitespace and punctuation
+        while new_col < char_count && !chars[new_col].is_alphanumeric() {
             new_col += 1;
         }
 
@@ -485,6 +544,7 @@ impl Editor {
         }
 
         let line = &lines[row];
+        let chars: Vec<char> = line.chars().collect();
 
         if col == 0 {
             if row > 0 {
@@ -497,13 +557,17 @@ impl Editor {
 
         let mut new_col = col - 1;
 
-        // Skip whitespace
-        while new_col > 0 && line.chars().nth(new_col).unwrap_or(' ').is_whitespace() {
+        // Skip whitespace and punctuation
+        while new_col > 0 && !chars[new_col].is_alphanumeric() {
             new_col -= 1;
         }
 
-        // Skip word
-        while new_col > 0 && !line.chars().nth(new_col - 1).unwrap_or(' ').is_whitespace() {
+        // Skip word (including underscores as part of word)
+        while new_col > 0 {
+            let ch = chars[new_col - 1];
+            if !ch.is_alphanumeric() && ch != '_' {
+                break;
+            }
             new_col -= 1;
         }
 
@@ -536,9 +600,9 @@ impl Editor {
 
             let line = &lines[row];
 
-            if col < line.len() {
-                // Kill from cursor to end of line
-                (line[col..].to_string(), true)
+            if col < line.chars().count() {
+                // Kill from cursor to end of line - use safe slicing
+                (Self::safe_string_slice(line, col, line.chars().count()), true)
             } else if row + 1 < lines.len() {
                 // If at end of line, kill the newline (join with next line)
                 ("\n".to_string(), false)
@@ -585,7 +649,7 @@ impl Editor {
             }
 
             let line = &lines[row];
-            line[0..col].to_string()
+            Self::safe_string_slice(line, 0, col)
         };
 
         if !killed_text.is_empty() {
