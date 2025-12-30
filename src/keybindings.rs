@@ -171,14 +171,28 @@ fn handle_string_edit_key(
 }
 
 pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
+    // Track if we had a floating window before should_quit
+    let had_floating = editor.floating_window.is_some();
+
     // Check for quit commands first
     if should_quit(editor, &key) {
         return false;
     }
 
+    // If should_quit just opened a dialog, don't process this key further
+    // (prevents the same ESC from both opening and closing the dialog)
+    if !had_floating && editor.floating_window.is_some() {
+        return true;
+    }
+
     // If floating window is focused, handle input specially
     if editor.focus_floating && editor.floating_window.is_some() {
-        return handle_floating_input(editor, key);
+        let result = handle_floating_input(editor, key);
+        // Check if pending_quit was set during dialog processing
+        if editor.pending_quit {
+            return false;
+        }
+        return result;
     }
 
     // Handle C-x prefix sequences
@@ -241,6 +255,7 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
                 editor.textarea.move_cursor(CursorMove::End);
                 editor.textarea.insert_newline();
                 editor.reset_kill_sequence();
+                editor.mark_modified();
             } else {
                 // Normal case: just move down
                 editor.move_cursor(CursorMove::Down);
@@ -294,18 +309,23 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
         // Kill and yank operations
         (KeyCode::Char('w'), KeyModifiers::CONTROL) => {
             editor.kill_region();
+            editor.mark_modified();
         }
         (KeyCode::Char('w'), KeyModifiers::ALT) => {
             editor.copy_region();
+            // Copy doesn't modify buffer
         }
         (KeyCode::Char('y'), KeyModifiers::CONTROL) => {
             editor.yank();
+            editor.mark_modified();
         }
         (KeyCode::Char('k'), KeyModifiers::CONTROL) => {
             editor.kill_to_end_of_line();
+            editor.mark_modified();
         }
         (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
             editor.kill_to_beginning_of_line();
+            editor.mark_modified();
         }
 
         // Default: pass through to textarea
@@ -314,6 +334,12 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
             let input: Input = event.into();
             editor.textarea.input(input);
             editor.reset_kill_sequence();
+            // Mark as modified for text-changing keys
+            if matches!(key.code,
+                KeyCode::Char(_) | KeyCode::Backspace | KeyCode::Delete | KeyCode::Enter | KeyCode::Tab
+            ) {
+                editor.mark_modified();
+            }
         }
     }
 
@@ -920,15 +946,41 @@ fn apply_confirm_result(
 }
 
 fn should_quit(editor: &mut Editor, key: &KeyEvent) -> bool {
-    // Close floating window first if it's open
-    if editor.floating_window.is_some() {
+    // Check if we should quit after a confirmation dialog
+    if editor.pending_quit {
+        return true;
+    }
+
+    // C-ESC: Force quit without prompting (only for scratch buffers with no file)
+    if key.code == KeyCode::Esc && key.modifiers.contains(KeyModifiers::CONTROL) {
+        if editor.current_file.is_none() {
+            // Scratch buffer - quit immediately without prompting
+            return true;
+        }
+        // Has a file - ignore C-ESC force quit
+        return false;
+    }
+
+    // Handle floating windows
+    if let Some(ref fw) = editor.floating_window {
+        let is_confirm = matches!(fw.mode, crate::editor::FloatingMode::Confirm { .. });
+
         match (key.code, key.modifiers) {
             (KeyCode::Esc, _) | (KeyCode::Char('g'), KeyModifiers::CONTROL) => {
-                editor.floating_window = None;
-                editor.focus_floating = false;
-                return false; // Don't quit main editor, just close floating
+                if is_confirm {
+                    // Let the Confirm dialog handle ESC/C-g as cancel
+                    return false;
+                } else {
+                    // Close other floating windows with ESC/C-g
+                    editor.floating_window = None;
+                    editor.focus_floating = false;
+                    return false;
+                }
             }
-            _ => {}
+            _ => {
+                // For other keys, don't quit - let handle_floating_input process them
+                return false;
+            }
         }
     }
 
@@ -937,6 +989,10 @@ fn should_quit(editor: &mut Editor, key: &KeyEvent) -> bool {
             if editor.mark_active {
                 editor.cancel_mark();
                 false
+            } else if editor.modified {
+                // Buffer modified, show confirmation
+                editor.start_quit_confirmation();
+                false
             } else {
                 true
             }
@@ -944,6 +1000,10 @@ fn should_quit(editor: &mut Editor, key: &KeyEvent) -> bool {
         (KeyCode::Char('g'), KeyModifiers::CONTROL) => {
             if editor.mark_active {
                 editor.cancel_mark();
+                false
+            } else if editor.modified {
+                // Buffer modified, show confirmation
+                editor.start_quit_confirmation();
                 false
             } else {
                 true

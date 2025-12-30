@@ -172,6 +172,76 @@ pub trait ConfirmationDialog {
     fn on_cancel(&self, _editor: &mut Editor) {}
 }
 
+/// Quit confirmation dialog - shown when quitting with unsaved changes
+pub struct QuitConfirmation;
+
+impl ConfirmationDialog for QuitConfirmation {
+    fn steps(&self) -> Vec<ConfirmationStep> {
+        vec![
+            ConfirmationStep {
+                prompt: "Buffer has unsaved changes. Quit anyway?".to_string(),
+                response_type: ResponseType::Binary,
+            },
+            ConfirmationStep {
+                prompt: "Save before quitting?".to_string(),
+                response_type: ResponseType::Choice(vec![
+                    ('y', "save & quit".to_string()),
+                    ('n', "quit without saving".to_string()),
+                    ('c', "cancel".to_string()),
+                ]),
+            },
+        ]
+    }
+
+    fn handle_response(
+        &mut self,
+        step_index: usize,
+        response: &str,
+        editor: &mut Editor,
+    ) -> ResponseResult {
+        match step_index {
+            0 => {
+                // "Quit anyway?" step
+                match response {
+                    "y" => ResponseResult::Continue, // Go to save prompt
+                    "n" => ResponseResult::Cancel,   // Don't quit
+                    _ => ResponseResult::Stay,
+                }
+            }
+            1 => {
+                // "Save before quitting?" step
+                match response {
+                    "y" => {
+                        // Save and quit
+                        if let Err(_e) = editor.save_file() {
+                            // Save failed (likely no filename), don't quit yet
+                            // The save_file function will open a minibuffer for filename
+                            ResponseResult::Cancel
+                        } else {
+                            // Save succeeded, mark for quit
+                            editor.pending_quit = true;
+                            ResponseResult::Finish
+                        }
+                    }
+                    "n" => {
+                        // Quit without saving
+                        editor.pending_quit = true;
+                        ResponseResult::Finish
+                    }
+                    "c" => ResponseResult::Cancel, // Go back, don't quit
+                    _ => ResponseResult::Stay,
+                }
+            }
+            _ => ResponseResult::Stay,
+        }
+    }
+
+    fn on_complete(&self, editor: &mut Editor) -> Result<(), String> {
+        editor.pending_quit = true;
+        Ok(())
+    }
+}
+
 /// Delete file confirmation dialog
 pub struct DeleteFileConfirmation {
     pub path: PathBuf,
@@ -311,6 +381,8 @@ pub struct Editor {
     // File state
     pub current_file: Option<PathBuf>,
     pub modified: bool,
+    // Quit state - set by QuitConfirmation dialog
+    pub pending_quit: bool,
 }
 
 impl Editor {
@@ -423,6 +495,7 @@ impl Editor {
             last_key: None,
             current_file: None,
             modified: false,
+            pending_quit: false,
         }
     }
 
@@ -1577,5 +1650,27 @@ impl Editor {
     /// Mark buffer as modified (called when text changes)
     pub fn mark_modified(&mut self) {
         self.modified = true;
+    }
+
+    /// Start the quit confirmation dialog (when buffer is modified)
+    pub fn start_quit_confirmation(&mut self) {
+        let dialog = QuitConfirmation;
+        let steps = dialog.steps();
+
+        self.floating_window = Some(FloatingWindow {
+            textarea: TextArea::default(),
+            visible: true,
+            x: 0,
+            y: 0,
+            width: 80,
+            height: 1,
+            mode: FloatingMode::Confirm {
+                dialog: Box::new(dialog),
+                steps,
+                current_index: 0,
+                text_input: String::new(),
+            },
+        });
+        self.focus_floating = true;
     }
 }

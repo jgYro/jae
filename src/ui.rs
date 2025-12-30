@@ -456,6 +456,11 @@ fn create_status_bar(editor: &Editor) -> Paragraph<'static> {
         ("C-g/ESC", "quit"),
     ];
 
+    // Show C-ESC force quit only for scratch buffers (no file)
+    if editor.current_file.is_none() && editor.modified {
+        help_items.push(("C-ESC", "force quit"));
+    }
+
     // Show focus switching help when floating window is open
     if editor.floating_window.is_some() {
         help_items.insert(7, ("Tab", "focus"));
