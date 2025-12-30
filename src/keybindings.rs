@@ -171,6 +171,16 @@ fn handle_string_edit_key(
 }
 
 pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
+    // C-x C-q: Ultimate force quit - bypasses everything, exits immediately
+    // This is the "kill switch" that always works regardless of editor state
+    if editor.last_key == Some((KeyCode::Char('x'), KeyModifiers::CONTROL)) {
+        if key.code == KeyCode::Char('q') && key.modifiers == KeyModifiers::CONTROL {
+            // Restore terminal state before force quitting
+            let _ = ratatui::restore();
+            std::process::exit(0);
+        }
+    }
+
     // Track if we had a floating window before should_quit
     let had_floating = editor.floating_window.is_some();
 
@@ -951,15 +961,8 @@ fn should_quit(editor: &mut Editor, key: &KeyEvent) -> bool {
         return true;
     }
 
-    // C-ESC: Force quit without prompting (only for scratch buffers with no file)
-    if key.code == KeyCode::Esc && key.modifiers.contains(KeyModifiers::CONTROL) {
-        if editor.current_file.is_none() {
-            // Scratch buffer - quit immediately without prompting
-            return true;
-        }
-        // Has a file - ignore C-ESC force quit
-        return false;
-    }
+    // Note: C-ESC force quit is handled at the start of handle_input
+    // before this function is even called
 
     // Handle floating windows
     if let Some(ref fw) = editor.floating_window {
