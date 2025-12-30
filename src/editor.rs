@@ -1,6 +1,9 @@
 use crate::kill_ring::KillRing;
 use tui_textarea::{CursorMove, TextArea};
 use std::cmp::min;
+use std::path::PathBuf;
+use std::fs;
+use std::io::{self, Read, Write};
 
 #[derive(Clone)]
 pub enum MenuAction {
@@ -98,6 +101,126 @@ impl MenuState {
     }
 }
 
+/// Callback for minibuffer actions
+#[derive(Clone)]
+pub enum MinibufferCallback {
+    OpenFile,
+    SaveFileAs,
+    DeleteFile,
+}
+
+/// Defines what kind of response a confirmation step expects
+#[derive(Clone)]
+pub enum ResponseType {
+    /// Binary yes/no - user presses 'y' or 'n'
+    Binary,
+    /// Multiple choice - user presses key associated with option: Vec<(key, label)>
+    Choice(Vec<(char, String)>),
+    /// Text input - user types response and presses Enter
+    TextInput { placeholder: String },
+}
+
+/// A single step in a confirmation dialog
+#[derive(Clone)]
+pub struct ConfirmationStep {
+    pub prompt: String,
+    pub response_type: ResponseType,
+}
+
+/// Result of handling a user response - controls dialog flow
+pub enum ResponseResult {
+    /// Advance to next step (or finish if last step)
+    Continue,
+    /// Go back to previous step
+    Back,
+    /// Jump to a specific step by index
+    GoTo(usize),
+    /// Stay on current step (e.g., invalid input)
+    Stay,
+    /// Cancel the entire operation
+    Cancel,
+    /// Finish immediately (skip any remaining steps)
+    Finish,
+}
+
+/// Trait for actions requiring user confirmation.
+/// Implement this to create new confirmable dialogs.
+///
+/// The `handle_response` method can execute actions at any step,
+/// and returns what to do next. This allows for complex flows
+/// where intermediate steps trigger operations.
+pub trait ConfirmationDialog {
+    /// Returns all confirmation steps in order
+    fn steps(&self) -> Vec<ConfirmationStep>;
+
+    /// Handle user response at given step.
+    /// Can execute actions and modify editor state.
+    /// Returns what the dialog should do next.
+    fn handle_response(
+        &mut self,
+        step_index: usize,
+        response: &str,
+        editor: &mut Editor,
+    ) -> ResponseResult;
+
+    /// Called when dialog completes successfully (last step + Continue, or Finish)
+    fn on_complete(&self, _editor: &mut Editor) -> Result<(), String> {
+        Ok(())
+    }
+
+    /// Called when user cancels - optional cleanup
+    fn on_cancel(&self, _editor: &mut Editor) {}
+}
+
+/// Delete file confirmation dialog
+pub struct DeleteFileConfirmation {
+    pub path: PathBuf,
+}
+
+impl ConfirmationDialog for DeleteFileConfirmation {
+    fn steps(&self) -> Vec<ConfirmationStep> {
+        vec![
+            ConfirmationStep {
+                prompt: format!("Delete file '{}'?", self.path.display()),
+                response_type: ResponseType::Binary,
+            },
+            ConfirmationStep {
+                prompt: format!("Permanently delete '{}'?", self.path.display()),
+                response_type: ResponseType::Binary,
+            },
+        ]
+    }
+
+    fn handle_response(
+        &mut self,
+        _step_index: usize,
+        response: &str,
+        _editor: &mut Editor,
+    ) -> ResponseResult {
+        match response {
+            "y" => ResponseResult::Continue,
+            "n" => ResponseResult::Cancel,
+            _ => ResponseResult::Stay,
+        }
+    }
+
+    fn on_complete(&self, editor: &mut Editor) -> Result<(), String> {
+        fs::remove_file(&self.path)
+            .map_err(|e| format!("Failed to delete file: {}", e))?;
+
+        // Clear buffer if this was the current file
+        if editor.current_file.as_ref() == Some(&self.path) {
+            editor.current_file = None;
+            editor.modified = false;
+            editor.textarea = TextArea::default();
+            editor.update_textarea_colors();
+            editor.textarea.set_cursor_line_style(ratatui::style::Style::default());
+        }
+
+        Ok(())
+    }
+}
+
 pub enum FloatingMode {
     TextEdit,
     Menu {
@@ -109,6 +232,22 @@ pub enum FloatingMode {
     Settings {
         items: Vec<SettingItem>,
         selected: usize,
+    },
+    /// Minibuffer for text input with completions (like Emacs minibuffer)
+    Minibuffer {
+        prompt: String,
+        input: String,
+        cursor_pos: usize,
+        completions: Vec<String>,
+        selected_completion: Option<usize>,
+        callback: MinibufferCallback,
+    },
+    /// Confirmation dialog - wraps any ConfirmationDialog implementation
+    Confirm {
+        dialog: Box<dyn ConfirmationDialog>,
+        steps: Vec<ConfirmationStep>,
+        current_index: usize,
+        text_input: String, // For TextInput response type
     },
 }
 
@@ -169,6 +308,9 @@ pub struct Editor {
     pub focus_floating: bool,
     pub settings: Settings,
     pub last_key: Option<(ratatui::crossterm::event::KeyCode, ratatui::crossterm::event::KeyModifiers)>,
+    // File state
+    pub current_file: Option<PathBuf>,
+    pub modified: bool,
 }
 
 impl Editor {
@@ -279,6 +421,8 @@ impl Editor {
             focus_floating: false,
             settings,
             last_key: None,
+            current_file: None,
+            modified: false,
         }
     }
 
@@ -653,7 +797,6 @@ impl Editor {
         };
 
         if !killed_text.is_empty() {
-            let text_len = killed_text.len();
             // Add to kill ring (C-u doesn't append to previous kills)
             self.kill_ring.push(killed_text);
 
@@ -661,8 +804,9 @@ impl Editor {
             self.textarea.move_cursor(CursorMove::Head);
 
             // Start selection and move forward to select the text
+            // Use `col` directly - it's already the character count from cursor position
             self.textarea.start_selection();
-            for _ in 0..text_len {
+            for _ in 0..col {
                 self.textarea.move_cursor(CursorMove::Forward);
             }
 
@@ -809,9 +953,9 @@ impl Editor {
             return None;
         }
 
-        // Limit preview length
-        let preview_text = if text.len() > 50 {
-            format!("{}...", &text[..50])
+        // Limit preview length (use chars for UTF-8 safety)
+        let preview_text = if text.chars().count() > 50 {
+            format!("{}...", text.chars().take(50).collect::<String>())
         } else {
             text.to_string()
         };
@@ -1119,5 +1263,319 @@ impl Editor {
         self.textarea.insert_str(&new_text);
         // Cancel mark
         self.cancel_mark();
+    }
+
+    // ==================== File Operations ====================
+
+    /// Expand ~ to home directory and resolve path
+    pub fn expand_path(path_str: &str) -> PathBuf {
+        if path_str.starts_with('~') {
+            if let Some(home) = dirs::home_dir() {
+                if path_str == "~" {
+                    return home;
+                } else if path_str.starts_with("~/") {
+                    return home.join(&path_str[2..]);
+                }
+            }
+        }
+        PathBuf::from(path_str)
+    }
+
+    /// Get filesystem completions for a partial path
+    pub fn get_path_completions(partial: &str) -> Vec<String> {
+        let expanded = Self::expand_path(partial);
+
+        // Determine parent directory and prefix
+        let (dir, prefix) = if partial.ends_with('/') || partial.ends_with(std::path::MAIN_SEPARATOR) {
+            (expanded.clone(), String::new())
+        } else {
+            let parent = expanded.parent().unwrap_or(&expanded);
+            let file_name = expanded.file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("");
+            (parent.to_path_buf(), file_name.to_string())
+        };
+
+        let mut completions = Vec::new();
+
+        if let Ok(entries) = fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                if let Some(name) = entry.file_name().to_str() {
+                    // Case-insensitive prefix match
+                    if name.to_lowercase().starts_with(&prefix.to_lowercase()) {
+                        let mut completion = if partial.starts_with('~') && !partial.starts_with("~/") {
+                            // Handle bare ~ case
+                            format!("~/{}", name)
+                        } else if partial.ends_with('/') || partial.ends_with(std::path::MAIN_SEPARATOR) {
+                            format!("{}{}", partial, name)
+                        } else {
+                            // Replace the last component
+                            let parent_str = if partial.contains('/') || partial.contains(std::path::MAIN_SEPARATOR) {
+                                let sep_pos = partial.rfind(|c| c == '/' || c == std::path::MAIN_SEPARATOR).unwrap();
+                                &partial[..=sep_pos]
+                            } else {
+                                ""
+                            };
+                            format!("{}{}", parent_str, name)
+                        };
+
+                        // Add trailing slash for directories
+                        if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                            completion.push('/');
+                        }
+
+                        completions.push(completion);
+                    }
+                }
+            }
+        }
+
+        completions.sort();
+        completions
+    }
+
+    /// Open minibuffer for file selection (C-x C-f)
+    pub fn open_file_prompt(&mut self) {
+        // Default to current directory or current file's directory
+        let initial_path = if let Some(ref current) = self.current_file {
+            current.parent()
+                .map(|p| format!("{}/", p.display()))
+                .unwrap_or_else(|| "./".to_string())
+        } else {
+            std::env::current_dir()
+                .map(|p| format!("{}/", p.display()))
+                .unwrap_or_else(|_| "~/".to_string())
+        };
+
+        let completions = Self::get_path_completions(&initial_path);
+
+        self.floating_window = Some(FloatingWindow {
+            textarea: TextArea::default(),
+            visible: true,
+            x: 0,
+            y: 0,  // Will be positioned at bottom by UI
+            width: 80,
+            height: 1,
+            mode: FloatingMode::Minibuffer {
+                prompt: "Find file: ".to_string(),
+                input: initial_path.clone(),
+                cursor_pos: initial_path.len(),
+                completions,
+                selected_completion: None,
+                callback: MinibufferCallback::OpenFile,
+            },
+        });
+        self.focus_floating = true;
+    }
+
+    /// Open file from path, load into textarea
+    pub fn open_file(&mut self, path: &std::path::Path) -> io::Result<()> {
+        let mut file = fs::File::open(path)?;
+        let mut contents = String::new();
+        file.read_to_string(&mut contents)?;
+
+        // Create new textarea with file contents
+        let lines: Vec<&str> = contents.lines().collect();
+        self.textarea = if lines.is_empty() {
+            TextArea::default()
+        } else {
+            TextArea::new(lines.iter().map(|s| s.to_string()).collect())
+        };
+
+        // Reapply styling
+        self.update_textarea_colors();
+        self.textarea.set_cursor_line_style(ratatui::style::Style::default());
+
+        // Update file state
+        self.current_file = Some(path.to_path_buf());
+        self.modified = false;
+
+        // Reset editor state
+        self.mark_active = false;
+        self.mark_set = false;
+        self.mark_position = None;
+
+        Ok(())
+    }
+
+    /// Save current buffer to current_file (or prompt if none)
+    pub fn save_file(&mut self) -> io::Result<()> {
+        if let Some(ref path) = self.current_file.clone() {
+            self.save_file_to(path)
+        } else {
+            // No current file, need to prompt
+            self.save_file_as_prompt();
+            Ok(())
+        }
+    }
+
+    /// Open minibuffer for save-as path (C-x C-w)
+    pub fn save_file_as_prompt(&mut self) {
+        let initial_path = if let Some(ref current) = self.current_file {
+            current.display().to_string()
+        } else {
+            std::env::current_dir()
+                .map(|p| format!("{}/", p.display()))
+                .unwrap_or_else(|_| "~/".to_string())
+        };
+
+        let completions = Self::get_path_completions(&initial_path);
+
+        self.floating_window = Some(FloatingWindow {
+            textarea: TextArea::default(),
+            visible: true,
+            x: 0,
+            y: 0,
+            width: 80,
+            height: 1,
+            mode: FloatingMode::Minibuffer {
+                prompt: "Save as: ".to_string(),
+                input: initial_path.clone(),
+                cursor_pos: initial_path.len(),
+                completions,
+                selected_completion: None,
+                callback: MinibufferCallback::SaveFileAs,
+            },
+        });
+        self.focus_floating = true;
+    }
+
+    /// Save to specific path
+    pub fn save_file_to(&mut self, path: &std::path::Path) -> io::Result<()> {
+        let contents = self.textarea.lines().join("\n");
+        let mut file = fs::File::create(path)?;
+        file.write_all(contents.as_bytes())?;
+
+        self.current_file = Some(path.to_path_buf());
+        self.modified = false;
+
+        Ok(())
+    }
+
+    /// Start delete file confirmation chain (C-x k)
+    pub fn delete_file_prompt(&mut self) {
+        // Default to current file if one is open
+        let initial_path = self.current_file
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| {
+                std::env::current_dir()
+                    .map(|p| format!("{}/", p.display()))
+                    .unwrap_or_else(|_| "~/".to_string())
+            });
+
+        let completions = Self::get_path_completions(&initial_path);
+
+        self.floating_window = Some(FloatingWindow {
+            textarea: TextArea::default(),
+            visible: true,
+            x: 0,
+            y: 0,
+            width: 80,
+            height: 1,
+            mode: FloatingMode::Minibuffer {
+                prompt: "Delete file: ".to_string(),
+                input: initial_path.clone(),
+                cursor_pos: initial_path.len(),
+                completions,
+                selected_completion: None,
+                callback: MinibufferCallback::DeleteFile,
+            },
+        });
+        self.focus_floating = true;
+    }
+
+    /// Start the confirmation dialog for deleting a file
+    pub fn start_delete_confirmation(&mut self, path: PathBuf) {
+        let dialog = DeleteFileConfirmation { path };
+        let steps = dialog.steps();
+
+        self.floating_window = Some(FloatingWindow {
+            textarea: TextArea::default(),
+            visible: true,
+            x: 0,
+            y: 0,
+            width: 80,
+            height: 1,
+            mode: FloatingMode::Confirm {
+                dialog: Box::new(dialog),
+                steps,
+                current_index: 0,
+                text_input: String::new(),
+            },
+        });
+        self.focus_floating = true;
+    }
+
+    /// Apply completion to minibuffer input
+    pub fn apply_minibuffer_completion(&mut self) {
+        if let Some(ref mut fw) = self.floating_window {
+            if let FloatingMode::Minibuffer {
+                ref mut input,
+                ref mut cursor_pos,
+                ref mut completions,
+                ref mut selected_completion,
+                ..
+            } = fw.mode {
+                if completions.is_empty() {
+                    // Refresh completions
+                    *completions = Self::get_path_completions(input);
+                    if !completions.is_empty() {
+                        *selected_completion = Some(0);
+                    }
+                } else if let Some(idx) = *selected_completion {
+                    // Apply selected completion
+                    if let Some(completion) = completions.get(idx) {
+                        *input = completion.clone();
+                        *cursor_pos = input.len();
+                        // Refresh completions for new input
+                        *completions = Self::get_path_completions(input);
+                        *selected_completion = if completions.is_empty() { None } else { Some(0) };
+                    }
+                } else if !completions.is_empty() {
+                    // No selection, select first
+                    *selected_completion = Some(0);
+                }
+            }
+        }
+    }
+
+    /// Execute minibuffer callback with current input
+    pub fn execute_minibuffer_callback(&mut self) {
+        if let Some(ref fw) = self.floating_window {
+            if let FloatingMode::Minibuffer { ref input, ref callback, .. } = fw.mode {
+                let path = Self::expand_path(input);
+                let callback_clone = callback.clone();
+                let path_clone = path.clone();
+
+                // Close minibuffer first
+                self.floating_window = None;
+                self.focus_floating = false;
+
+                // Execute callback
+                match callback_clone {
+                    MinibufferCallback::OpenFile => {
+                        if let Err(e) = self.open_file(&path_clone) {
+                            // TODO: Show error message to user
+                            eprintln!("Failed to open file: {}", e);
+                        }
+                    }
+                    MinibufferCallback::SaveFileAs => {
+                        if let Err(e) = self.save_file_to(&path_clone) {
+                            eprintln!("Failed to save file: {}", e);
+                        }
+                    }
+                    MinibufferCallback::DeleteFile => {
+                        // Start delete confirmation
+                        self.start_delete_confirmation(path_clone);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Mark buffer as modified (called when text changes)
+    pub fn mark_modified(&mut self) {
+        self.modified = true;
     }
 }

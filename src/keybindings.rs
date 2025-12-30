@@ -2,6 +2,174 @@ use crate::editor::Editor;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tui_textarea::{CursorMove, Input};
 
+/// Result of handling a key in a minibuffer-like context
+enum MinibufferKeyResult {
+    Handled,
+    NotHandled,
+    Cancel,
+    Execute,
+}
+
+/// Handle common text editing keys for a string input (used in minibuffer, etc.)
+/// Returns (handled, cursor_pos_change)
+fn handle_string_edit_key(
+    key: &KeyEvent,
+    input: &mut String,
+    cursor_pos: &mut usize,
+) -> MinibufferKeyResult {
+    match (key.code, key.modifiers) {
+        // Cancel with ESC or C-g
+        (KeyCode::Esc, _) | (KeyCode::Char('g'), KeyModifiers::CONTROL) => {
+            return MinibufferKeyResult::Cancel;
+        }
+
+        // Execute with Enter
+        (KeyCode::Enter, _) => {
+            return MinibufferKeyResult::Execute;
+        }
+
+        // Cursor movement
+        (KeyCode::Char('a'), KeyModifiers::CONTROL) => {
+            *cursor_pos = 0;
+        }
+        (KeyCode::Char('e'), KeyModifiers::CONTROL) => {
+            *cursor_pos = input.chars().count();
+        }
+        (KeyCode::Char('f'), KeyModifiers::CONTROL) | (KeyCode::Right, _) => {
+            let char_count = input.chars().count();
+            if *cursor_pos < char_count {
+                *cursor_pos += 1;
+            }
+        }
+        (KeyCode::Char('b'), KeyModifiers::CONTROL) | (KeyCode::Left, _) => {
+            if *cursor_pos > 0 {
+                *cursor_pos -= 1;
+            }
+        }
+
+        // Word movement (M-f, M-b)
+        (KeyCode::Char('f'), KeyModifiers::ALT) => {
+            let chars: Vec<char> = input.chars().collect();
+            let mut pos = *cursor_pos;
+            // Skip current word
+            while pos < chars.len() && chars[pos].is_alphanumeric() {
+                pos += 1;
+            }
+            // Skip whitespace
+            while pos < chars.len() && !chars[pos].is_alphanumeric() {
+                pos += 1;
+            }
+            *cursor_pos = pos;
+        }
+        (KeyCode::Char('b'), KeyModifiers::ALT) => {
+            let chars: Vec<char> = input.chars().collect();
+            let mut pos = *cursor_pos;
+            if pos > 0 {
+                pos -= 1;
+                // Skip whitespace
+                while pos > 0 && !chars[pos].is_alphanumeric() {
+                    pos -= 1;
+                }
+                // Skip word
+                while pos > 0 && chars[pos - 1].is_alphanumeric() {
+                    pos -= 1;
+                }
+            }
+            *cursor_pos = pos;
+        }
+
+        // Kill word backward (M-Backspace) - must come before regular Backspace
+        (KeyCode::Backspace, KeyModifiers::ALT) => {
+            let chars: Vec<char> = input.chars().collect();
+            let mut new_pos = *cursor_pos;
+            if new_pos > 0 {
+                new_pos -= 1;
+                while new_pos > 0 && !chars[new_pos].is_alphanumeric() {
+                    new_pos -= 1;
+                }
+                while new_pos > 0 && chars[new_pos - 1].is_alphanumeric() {
+                    new_pos -= 1;
+                }
+            }
+            let new_chars: String = chars[..new_pos].iter()
+                .chain(chars[*cursor_pos..].iter())
+                .collect();
+            *input = new_chars;
+            *cursor_pos = new_pos;
+        }
+
+        // Kill word forward (M-d)
+        (KeyCode::Char('d'), KeyModifiers::ALT) => {
+            let chars: Vec<char> = input.chars().collect();
+            let mut end_pos = *cursor_pos;
+            // Skip current word
+            while end_pos < chars.len() && chars[end_pos].is_alphanumeric() {
+                end_pos += 1;
+            }
+            // Skip whitespace
+            while end_pos < chars.len() && !chars[end_pos].is_alphanumeric() {
+                end_pos += 1;
+            }
+            let new_chars: String = chars[..*cursor_pos].iter()
+                .chain(chars[end_pos..].iter())
+                .collect();
+            *input = new_chars;
+        }
+
+        // Regular Backspace (after M-Backspace to avoid being shadowed)
+        (KeyCode::Backspace, KeyModifiers::NONE) => {
+            if *cursor_pos > 0 {
+                let chars: Vec<char> = input.chars().collect();
+                let new_chars: String = chars[..*cursor_pos - 1].iter()
+                    .chain(chars[*cursor_pos..].iter())
+                    .collect();
+                *input = new_chars;
+                *cursor_pos -= 1;
+            }
+        }
+
+        // Delete (C-d or Delete key)
+        (KeyCode::Char('d'), KeyModifiers::CONTROL) | (KeyCode::Delete, _) => {
+            let char_count = input.chars().count();
+            if *cursor_pos < char_count {
+                let chars: Vec<char> = input.chars().collect();
+                let new_chars: String = chars[..*cursor_pos].iter()
+                    .chain(chars[*cursor_pos + 1..].iter())
+                    .collect();
+                *input = new_chars;
+            }
+        }
+
+        // Kill to end of line (C-k)
+        (KeyCode::Char('k'), KeyModifiers::CONTROL) => {
+            let chars: Vec<char> = input.chars().collect();
+            *input = chars[..*cursor_pos].iter().collect();
+        }
+
+        // Kill to beginning of line (C-u)
+        (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+            let chars: Vec<char> = input.chars().collect();
+            *input = chars[*cursor_pos..].iter().collect();
+            *cursor_pos = 0;
+        }
+
+        // Regular character input
+        (KeyCode::Char(c), KeyModifiers::NONE) | (KeyCode::Char(c), KeyModifiers::SHIFT) => {
+            let chars: Vec<char> = input.chars().collect();
+            let new_chars: String = chars[..*cursor_pos].iter()
+                .chain(std::iter::once(&c))
+                .chain(chars[*cursor_pos..].iter())
+                .collect();
+            *input = new_chars;
+            *cursor_pos += 1;
+        }
+
+        _ => return MinibufferKeyResult::NotHandled,
+    }
+
+    MinibufferKeyResult::Handled
+}
+
 pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
     // Check for quit commands first
     if should_quit(editor, &key) {
@@ -13,12 +181,42 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
         return handle_floating_input(editor, key);
     }
 
-    // Handle C-x C-x sequence
+    // Handle C-x prefix sequences
     if editor.last_key == Some((KeyCode::Char('x'), KeyModifiers::CONTROL)) {
-        if matches!((key.code, key.modifiers), (KeyCode::Char('x'), KeyModifiers::CONTROL)) {
-            editor.swap_cursor_mark();
-            editor.last_key = None;
-            return true;
+        match (key.code, key.modifiers) {
+            // C-x C-x - swap cursor/mark
+            (KeyCode::Char('x'), KeyModifiers::CONTROL) => {
+                editor.swap_cursor_mark();
+                editor.last_key = None;
+                return true;
+            }
+            // C-x C-f - Find/open file
+            (KeyCode::Char('f'), KeyModifiers::CONTROL) => {
+                editor.open_file_prompt();
+                editor.last_key = None;
+                return true;
+            }
+            // C-x C-s - Save file
+            (KeyCode::Char('s'), KeyModifiers::CONTROL) => {
+                let _ = editor.save_file();
+                editor.last_key = None;
+                return true;
+            }
+            // C-x C-w - Save as (write to new file)
+            (KeyCode::Char('w'), KeyModifiers::CONTROL) => {
+                editor.save_file_as_prompt();
+                editor.last_key = None;
+                return true;
+            }
+            // C-x k - Kill/delete file
+            (KeyCode::Char('k'), KeyModifiers::NONE) => {
+                editor.delete_file_prompt();
+                editor.last_key = None;
+                return true;
+            }
+            _ => {
+                editor.last_key = None;
+            }
         }
     }
 
@@ -244,7 +442,7 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                         });
 
                         // Drop the mutable reference to fw before calling editor methods
-                        drop(fw);
+                        let _ = fw; // End borrow
 
                         // Now update colors
                         if let Some((is_cursor, index)) = update_info {
@@ -295,7 +493,7 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                         });
 
                         // Drop the mutable reference to fw before calling editor methods
-                        drop(fw);
+                        let _ = fw; // End borrow
 
                         // Now update colors
                         if let Some((is_cursor, index)) = update_info {
@@ -314,7 +512,7 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                 }
             }
             crate::editor::FloatingMode::TextEdit => {
-                // Text edit mode
+                // Text edit mode - use tui_textarea's built-in handling
                 match (key.code, key.modifiers) {
                     // Close floating window with ESC or M-q
                     (KeyCode::Esc, _) | (KeyCode::Char('q'), KeyModifiers::ALT) => {
@@ -327,7 +525,7 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                         editor.focus_floating = false;
                     }
 
-                    // Basic movement commands for floating window
+                    // Basic movement commands
                     (KeyCode::Char('f'), KeyModifiers::CONTROL) => {
                         fw.textarea.move_cursor(CursorMove::Forward);
                     }
@@ -347,6 +545,25 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                         fw.textarea.move_cursor(CursorMove::End);
                     }
 
+                    // Word movement
+                    (KeyCode::Char('f'), KeyModifiers::ALT) => {
+                        fw.textarea.move_cursor(CursorMove::WordForward);
+                    }
+                    (KeyCode::Char('b'), KeyModifiers::ALT) => {
+                        fw.textarea.move_cursor(CursorMove::WordBack);
+                    }
+
+                    // Kill/yank operations
+                    (KeyCode::Char('k'), KeyModifiers::CONTROL) => {
+                        fw.textarea.delete_line_by_end();
+                    }
+                    (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+                        fw.textarea.delete_line_by_head();
+                    }
+                    (KeyCode::Char('d'), KeyModifiers::ALT) => {
+                        fw.textarea.delete_word();
+                    }
+
                     // Default: pass through to floating window textarea
                     _ => {
                         let event = ratatui::crossterm::event::Event::Key(key);
@@ -355,10 +572,351 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                     }
                 }
             }
+
+            crate::editor::FloatingMode::Minibuffer {
+                input,
+                cursor_pos,
+                completions,
+                selected_completion,
+                ..
+            } => {
+                // Helper: check if path ends with / (is a directory)
+                let is_directory = |path: &str| path.ends_with('/');
+
+                // Handle Tab - enter directory or cycle completions
+                if matches!((key.code, key.modifiers), (KeyCode::Tab, _)) {
+                    if !completions.is_empty() {
+                        // If we have a selected completion that's a directory, enter it
+                        if let Some(idx) = *selected_completion {
+                            if let Some(comp) = completions.get(idx) {
+                                if is_directory(comp) {
+                                    // Enter the directory
+                                    *input = comp.clone();
+                                    *cursor_pos = input.chars().count();
+                                    *completions = crate::editor::Editor::get_path_completions(input);
+                                    *selected_completion = if completions.is_empty() { None } else { Some(0) };
+                                    return true;
+                                }
+                            }
+                        }
+
+                        // Otherwise, cycle to next completion and update input
+                        if let Some(idx) = *selected_completion {
+                            *selected_completion = Some((idx + 1) % completions.len());
+                        } else {
+                            *selected_completion = Some(0);
+                        }
+                        // Update input to show selected completion
+                        if let Some(completion) = selected_completion.and_then(|i| completions.get(i)) {
+                            *input = completion.clone();
+                            *cursor_pos = input.chars().count();
+                        }
+                    } else {
+                        // No completions, refresh them
+                        *completions = crate::editor::Editor::get_path_completions(input);
+                        if !completions.is_empty() {
+                            *selected_completion = Some(0);
+                            // Update input to first completion
+                            if let Some(comp) = completions.first() {
+                                *input = comp.clone();
+                                *cursor_pos = input.chars().count();
+                            }
+                        }
+                    }
+                    return true;
+                }
+
+                // Handle Up/Down - navigate completions and update input
+                match (key.code, key.modifiers) {
+                    (KeyCode::Up, _) | (KeyCode::Char('p'), KeyModifiers::CONTROL) if !completions.is_empty() => {
+                        if let Some(idx) = *selected_completion {
+                            *selected_completion = Some(if idx == 0 { completions.len() - 1 } else { idx - 1 });
+                        } else {
+                            *selected_completion = Some(completions.len() - 1);
+                        }
+                        // Update input to show selected completion
+                        if let Some(completion) = selected_completion.and_then(|i| completions.get(i)) {
+                            *input = completion.clone();
+                            *cursor_pos = input.chars().count();
+                        }
+                        return true;
+                    }
+                    (KeyCode::Down, _) | (KeyCode::Char('n'), KeyModifiers::CONTROL) if !completions.is_empty() => {
+                        if let Some(idx) = *selected_completion {
+                            *selected_completion = Some((idx + 1) % completions.len());
+                        } else {
+                            *selected_completion = Some(0);
+                        }
+                        // Update input to show selected completion
+                        if let Some(completion) = selected_completion.and_then(|i| completions.get(i)) {
+                            *input = completion.clone();
+                            *cursor_pos = input.chars().count();
+                        }
+                        return true;
+                    }
+                    _ => {}
+                }
+
+                // Handle Enter - enter directory or open file
+                if matches!((key.code, key.modifiers), (KeyCode::Enter, _)) {
+                    // Check if current input is a directory
+                    if is_directory(input) {
+                        // Already in a directory, refresh completions to show contents
+                        *completions = crate::editor::Editor::get_path_completions(input);
+                        *selected_completion = if completions.is_empty() { None } else { Some(0) };
+                        // Update input to first completion if available
+                        if let Some(comp) = completions.first() {
+                            *input = comp.clone();
+                            *cursor_pos = input.chars().count();
+                        }
+                        return true;
+                    }
+
+                    // Check if input path is a directory (without trailing /)
+                    let expanded = crate::editor::Editor::expand_path(input);
+                    if expanded.is_dir() {
+                        // Add trailing / and enter directory
+                        input.push('/');
+                        *cursor_pos = input.chars().count();
+                        *completions = crate::editor::Editor::get_path_completions(input);
+                        *selected_completion = if completions.is_empty() { None } else { Some(0) };
+                        return true;
+                    }
+
+                    // It's a file, execute callback
+                    let _ = fw; // End borrow
+                    editor.execute_minibuffer_callback();
+                    return true;
+                }
+
+                // Handle Backspace specially - go up directory at boundary
+                if matches!((key.code, key.modifiers), (KeyCode::Backspace, KeyModifiers::NONE)) {
+                    // Check if we're at a directory boundary (cursor after a /)
+                    let chars: Vec<char> = input.chars().collect();
+                    if *cursor_pos > 0 && chars.get(*cursor_pos - 1) == Some(&'/') {
+                        // Go up one directory level
+                        // Remove trailing / and find previous /
+                        let path_without_trailing = &input[..input.len() - 1];
+                        if let Some(last_sep) = path_without_trailing.rfind('/') {
+                            *input = format!("{}/", &path_without_trailing[..last_sep]);
+                            *cursor_pos = input.chars().count();
+                            *completions = crate::editor::Editor::get_path_completions(input);
+                            *selected_completion = if completions.is_empty() { None } else { Some(0) };
+                        } else if input.starts_with('~') {
+                            // At home directory, can't go higher
+                            *input = "~/".to_string();
+                            *cursor_pos = 2;
+                            *completions = crate::editor::Editor::get_path_completions(input);
+                            *selected_completion = if completions.is_empty() { None } else { Some(0) };
+                        }
+                        return true;
+                    }
+                    // Otherwise, normal backspace - handled by shared handler below
+                }
+
+                // Handle ESC/C-g for cancel
+                if matches!((key.code, key.modifiers), (KeyCode::Esc, _) | (KeyCode::Char('g'), KeyModifiers::CONTROL)) {
+                    editor.floating_window = None;
+                    editor.focus_floating = false;
+                    return true;
+                }
+
+                // Use shared text editing handler for other keys
+                match handle_string_edit_key(&key, input, cursor_pos) {
+                    MinibufferKeyResult::Cancel => {
+                        editor.floating_window = None;
+                        editor.focus_floating = false;
+                    }
+                    MinibufferKeyResult::Execute => {
+                        // Already handled Enter above, but just in case
+                        let _ = fw; // End borrow
+                        editor.execute_minibuffer_callback();
+                        return true;
+                    }
+                    MinibufferKeyResult::Handled => {
+                        // Refresh completions after any input change
+                        *completions = crate::editor::Editor::get_path_completions(input);
+                        *selected_completion = if completions.is_empty() { None } else { Some(0) };
+                    }
+                    MinibufferKeyResult::NotHandled => {}
+                }
+            }
+
+            crate::editor::FloatingMode::Confirm {
+                steps,
+                current_index,
+                text_input,
+                ..
+            } => {
+                // Check what type of response we're expecting
+                let response_type = steps.get(*current_index)
+                    .map(|s| s.response_type.clone());
+                let total_steps = steps.len();
+                let idx = *current_index;
+
+                // Determine what action to take based on response type and key
+                let action = match response_type {
+                    Some(crate::editor::ResponseType::Binary) => {
+                        match (key.code, key.modifiers) {
+                            (KeyCode::Esc, _) | (KeyCode::Char('g'), KeyModifiers::CONTROL) => {
+                                Some(ConfirmAction::Cancel)
+                            }
+                            (KeyCode::Char('y'), _) => Some(ConfirmAction::Respond("y".to_string())),
+                            (KeyCode::Char('n'), _) => Some(ConfirmAction::Respond("n".to_string())),
+                            _ => None,
+                        }
+                    }
+                    Some(crate::editor::ResponseType::Choice(options)) => {
+                        match (key.code, key.modifiers) {
+                            (KeyCode::Esc, _) | (KeyCode::Char('g'), KeyModifiers::CONTROL) => {
+                                Some(ConfirmAction::Cancel)
+                            }
+                            (KeyCode::Char(c), _) => {
+                                if options.iter().any(|(k, _)| *k == c) {
+                                    Some(ConfirmAction::Respond(c.to_string()))
+                                } else {
+                                    None
+                                }
+                            }
+                            _ => None,
+                        }
+                    }
+                    Some(crate::editor::ResponseType::TextInput { .. }) => {
+                        let mut cursor = text_input.chars().count();
+                        match handle_string_edit_key(&key, text_input, &mut cursor) {
+                            MinibufferKeyResult::Cancel => Some(ConfirmAction::Cancel),
+                            MinibufferKeyResult::Execute => {
+                                let input = text_input.clone();
+                                *text_input = String::new();
+                                Some(ConfirmAction::Respond(input))
+                            }
+                            _ => None,
+                        }
+                    }
+                    None => None,
+                };
+
+                // Drop the borrow before processing the action
+                let _ = fw; // End borrow
+
+                // Now process the action with full access to editor
+                if let Some(action) = action {
+                    process_confirm_action(editor, action, idx, total_steps);
+                }
+            }
         }
     }
 
     true
+}
+
+/// Action to take in a confirmation dialog
+enum ConfirmAction {
+    Cancel,
+    Respond(String),
+}
+
+/// Process a confirmation action
+fn process_confirm_action(
+    editor: &mut crate::editor::Editor,
+    action: ConfirmAction,
+    current_index: usize,
+    total_steps: usize,
+) {
+    match action {
+        ConfirmAction::Cancel => {
+            cancel_confirm_dialog(editor);
+        }
+        ConfirmAction::Respond(response) => {
+            // Take ownership of the floating window to call handle_response
+            if let Some(mut fw) = editor.floating_window.take() {
+                if let crate::editor::FloatingMode::Confirm { ref mut dialog, .. } = fw.mode {
+                    let result = dialog.handle_response(current_index, &response, editor);
+
+                    // Put the window back (might be modified by handle_response)
+                    editor.floating_window = Some(fw);
+
+                    // Apply the result
+                    apply_confirm_result(editor, result, total_steps, current_index);
+                }
+            }
+        }
+    }
+}
+
+/// Cancel a confirmation dialog
+fn cancel_confirm_dialog(editor: &mut crate::editor::Editor) {
+    // Take ownership to avoid borrow issues
+    if let Some(fw) = editor.floating_window.take() {
+        if let crate::editor::FloatingMode::Confirm { dialog, .. } = fw.mode {
+            dialog.on_cancel(editor);
+        }
+    }
+    editor.focus_floating = false;
+}
+
+/// Apply the result of a confirmation response
+fn apply_confirm_result(
+    editor: &mut crate::editor::Editor,
+    result: crate::editor::ResponseResult,
+    total_steps: usize,
+    current_index: usize,
+) {
+    use crate::editor::ResponseResult;
+
+    match result {
+        ResponseResult::Continue => {
+            if current_index + 1 >= total_steps {
+                // Last step, execute on_complete
+                if let Some(fw) = editor.floating_window.take() {
+                    if let crate::editor::FloatingMode::Confirm { dialog, .. } = fw.mode {
+                        let _ = dialog.on_complete(editor);
+                    }
+                }
+                editor.focus_floating = false;
+            } else {
+                // Advance to next step
+                if let Some(ref mut fw) = editor.floating_window {
+                    if let crate::editor::FloatingMode::Confirm { current_index: ref mut ci, .. } = fw.mode {
+                        *ci = current_index + 1;
+                    }
+                }
+            }
+        }
+        ResponseResult::Back => {
+            if current_index > 0 {
+                if let Some(ref mut fw) = editor.floating_window {
+                    if let crate::editor::FloatingMode::Confirm { current_index: ref mut ci, .. } = fw.mode {
+                        *ci = current_index - 1;
+                    }
+                }
+            }
+        }
+        ResponseResult::GoTo(idx) => {
+            if idx < total_steps {
+                if let Some(ref mut fw) = editor.floating_window {
+                    if let crate::editor::FloatingMode::Confirm { current_index: ref mut ci, .. } = fw.mode {
+                        *ci = idx;
+                    }
+                }
+            }
+        }
+        ResponseResult::Stay => {
+            // Do nothing, stay on current step
+        }
+        ResponseResult::Cancel => {
+            cancel_confirm_dialog(editor);
+        }
+        ResponseResult::Finish => {
+            // Complete immediately
+            if let Some(fw) = editor.floating_window.take() {
+                if let crate::editor::FloatingMode::Confirm { dialog, .. } = fw.mode {
+                    let _ = dialog.on_complete(editor);
+                }
+            }
+            editor.focus_floating = false;
+        }
+    }
 }
 
 fn should_quit(editor: &mut Editor, key: &KeyEvent) -> bool {
