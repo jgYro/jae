@@ -1,3 +1,4 @@
+mod commands;
 mod editor;
 mod keybindings;
 mod kill_ring;

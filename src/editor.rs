@@ -1,3 +1,4 @@
+use crate::commands::{CommandRegistry, KeyPrefix};
 use crate::kill_ring::KillRing;
 use tui_textarea::{CursorMove, TextArea};
 use std::cmp::min;
@@ -319,6 +320,20 @@ pub enum FloatingMode {
         current_index: usize,
         text_input: String, // For TextInput response type
     },
+    /// Command palette (M-x) for executing commands by name
+    CommandPalette {
+        input: String,
+        cursor_pos: usize,
+        filtered_commands: Vec<CommandInfo>,
+        selected: usize,
+    },
+}
+
+/// Command info for display in command palette
+pub struct CommandInfo {
+    pub name: &'static str,
+    pub description: &'static str,
+    pub keybinding: Option<String>,
 }
 
 #[derive(Clone)]
@@ -367,6 +382,57 @@ impl Default for Settings {
     }
 }
 
+/// Item shown in which-key display
+pub struct WhichKeyItem {
+    pub key_display: String,
+    pub command_name: &'static str,
+}
+
+/// Status bar state for which-key display and prefix tracking
+pub struct StatusBarState {
+    pub expanded: bool,
+    pub active_prefix: Option<Box<dyn KeyPrefix>>,
+    pub which_key_items: Vec<WhichKeyItem>,
+    pub command_registry: CommandRegistry,
+}
+
+impl StatusBarState {
+    pub fn new() -> Self {
+        Self {
+            expanded: false,
+            active_prefix: None,
+            which_key_items: Vec::new(),
+            command_registry: CommandRegistry::new(),
+        }
+    }
+
+    /// Activate a prefix and populate which-key items
+    pub fn activate_prefix(&mut self, prefix: Box<dyn KeyPrefix>) {
+        let bindings = prefix.bindings();
+        self.which_key_items = bindings
+            .into_iter()
+            .map(|b| WhichKeyItem {
+                key_display: b.key.display(),
+                command_name: b.command,
+            })
+            .collect();
+        self.active_prefix = Some(prefix);
+        self.expanded = true;
+    }
+
+    /// Clear the active prefix and collapse the status bar
+    pub fn clear_prefix(&mut self) {
+        self.active_prefix = None;
+        self.which_key_items.clear();
+        self.expanded = false;
+    }
+
+    /// Get the display name of the active prefix
+    pub fn prefix_display_name(&self) -> Option<&'static str> {
+        self.active_prefix.as_ref().map(|p| p.display_name())
+    }
+}
+
 pub struct Editor {
     pub textarea: TextArea<'static>,
     pub mark_active: bool,
@@ -377,6 +443,7 @@ pub struct Editor {
     pub floating_window: Option<FloatingWindow>,
     pub focus_floating: bool,
     pub settings: Settings,
+    pub status_bar: StatusBarState,
     pub last_key: Option<(ratatui::crossterm::event::KeyCode, ratatui::crossterm::event::KeyModifiers)>,
     // File state
     pub current_file: Option<PathBuf>,
@@ -492,6 +559,7 @@ impl Editor {
             floating_window: None,
             focus_floating: false,
             settings,
+            status_bar: StatusBarState::new(),
             last_key: None,
             current_file: None,
             modified: false,
@@ -1672,5 +1740,75 @@ impl Editor {
             },
         });
         self.focus_floating = true;
+    }
+
+    /// Open the M-x command palette
+    pub fn open_command_palette(&mut self) {
+        // Get all commands and convert to CommandInfo
+        let all_commands: Vec<CommandInfo> = self.status_bar.command_registry
+            .all_commands()
+            .map(|cmd| CommandInfo {
+                name: cmd.name,
+                description: cmd.description,
+                keybinding: cmd.keybinding.as_ref().map(|kb| kb.display()),
+            })
+            .collect();
+
+        // Sort commands by name for consistent ordering
+        let mut sorted_commands = all_commands;
+        sorted_commands.sort_by(|a, b| a.name.cmp(b.name));
+
+        self.floating_window = Some(FloatingWindow {
+            textarea: TextArea::default(),
+            visible: true,
+            x: 0,
+            y: 0,
+            width: 80,
+            height: 1,
+            mode: FloatingMode::CommandPalette {
+                input: String::new(),
+                cursor_pos: 0,
+                filtered_commands: sorted_commands,
+                selected: 0,
+            },
+        });
+        self.focus_floating = true;
+    }
+
+    /// Filter commands for command palette based on search input
+    pub fn filter_commands(&self, query: &str) -> Vec<CommandInfo> {
+        let query_lower = query.to_lowercase();
+        let mut results: Vec<CommandInfo> = self.status_bar.command_registry
+            .all_commands()
+            .filter(|cmd| {
+                cmd.name.to_lowercase().contains(&query_lower)
+                    || cmd.description.to_lowercase().contains(&query_lower)
+            })
+            .map(|cmd| CommandInfo {
+                name: cmd.name,
+                description: cmd.description,
+                keybinding: cmd.keybinding.as_ref().map(|kb| kb.display()),
+            })
+            .collect();
+
+        // Sort by relevance - exact name match first, then starts with, then contains
+        results.sort_by(|a, b| {
+            let a_exact = a.name.to_lowercase() == query_lower;
+            let b_exact = b.name.to_lowercase() == query_lower;
+            let a_starts = a.name.to_lowercase().starts_with(&query_lower);
+            let b_starts = b.name.to_lowercase().starts_with(&query_lower);
+
+            match (a_exact, b_exact) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => match (a_starts, b_starts) {
+                    (true, false) => std::cmp::Ordering::Less,
+                    (false, true) => std::cmp::Ordering::Greater,
+                    _ => a.name.cmp(b.name),
+                },
+            }
+        });
+
+        results
     }
 }

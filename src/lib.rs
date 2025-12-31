@@ -1,3 +1,4 @@
+pub mod commands;
 pub mod editor;
 pub mod keybindings;
 pub mod kill_ring;

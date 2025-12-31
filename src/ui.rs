@@ -8,17 +8,24 @@ use ratatui::{
 };
 
 pub fn draw(frame: &mut Frame, editor: &Editor) {
+    // Dynamic status bar height: 5 lines when expanded, 2 when collapsed
+    let status_height = if editor.status_bar.expanded { 5 } else { 2 };
+
     let chunks = Layout::vertical([
         Constraint::Min(3),
-        Constraint::Length(2),
+        Constraint::Length(status_height),
     ])
     .split(frame.area());
 
     // Text area
     frame.render_widget(&editor.textarea, chunks[0]);
 
-    // Status bar
-    frame.render_widget(create_status_bar(editor), chunks[1]);
+    // Status bar (with which-key when expanded)
+    if editor.status_bar.expanded {
+        render_expanded_status_bar(frame, editor, chunks[1]);
+    } else {
+        frame.render_widget(create_status_bar(editor), chunks[1]);
+    }
 
     // Floating window
     if let Some(ref fw) = editor.floating_window {
@@ -42,6 +49,7 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
                 FloatingMode::TextEdit => "Floating".to_string(),
                 FloatingMode::Minibuffer { .. } => "".to_string(),  // Minibuffer renders its own prompt
                 FloatingMode::Confirm { .. } => "".to_string(),  // Confirm renders its own prompt
+                FloatingMode::CommandPalette { .. } => "".to_string(),  // CommandPalette renders its own prompt
             };
 
             let block = Block::default()
@@ -394,6 +402,110 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
                         frame.render_widget(widget, confirm_area);
                     }
                 }
+
+                FloatingMode::CommandPalette {
+                    input,
+                    cursor_pos,
+                    filtered_commands,
+                    selected,
+                } => {
+                    // Calculate height based on number of commands to show
+                    let max_visible = 10;
+                    let visible_count = filtered_commands.len().min(max_visible);
+                    let palette_height = (visible_count + 3) as u16; // +3 for input line, borders
+
+                    // Position at bottom of screen, full width
+                    let palette_area = Rect::new(
+                        0,
+                        frame.area().height.saturating_sub(palette_height),
+                        frame.area().width,
+                        palette_height,
+                    );
+
+                    frame.render_widget(Clear, palette_area);
+
+                    // Build input line with cursor
+                    let chars: Vec<char> = input.chars().collect();
+                    let before_cursor: String = chars[..*cursor_pos].iter().collect();
+                    let cursor_char = chars.get(*cursor_pos).unwrap_or(&' ');
+                    let after_cursor: String = chars[*cursor_pos..].iter().skip(1).collect();
+
+                    let input_line = Line::from(vec![
+                        Span::styled("M-x ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                        Span::raw(before_cursor),
+                        Span::styled(
+                            cursor_char.to_string(),
+                            Style::default().bg(Color::White).fg(Color::Black),
+                        ),
+                        Span::raw(after_cursor),
+                    ]);
+
+                    // Build command list
+                    let mut lines = vec![input_line];
+
+                    // Show filtered commands with selection highlight
+                    for (i, cmd) in filtered_commands.iter().take(max_visible).enumerate() {
+                        let is_selected = i == *selected;
+                        let prefix = if is_selected { "→ " } else { "  " };
+
+                        let mut cmd_spans = vec![
+                            Span::styled(
+                                prefix,
+                                if is_selected {
+                                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                                } else {
+                                    Style::default()
+                                },
+                            ),
+                            Span::styled(
+                                cmd.name,
+                                if is_selected {
+                                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                                } else {
+                                    Style::default().fg(Color::White)
+                                },
+                            ),
+                        ];
+
+                        // Show keybinding if available
+                        if let Some(ref kb) = cmd.keybinding {
+                            cmd_spans.push(Span::styled(
+                                format!(" [{}]", kb),
+                                Style::default().fg(Color::Cyan),
+                            ));
+                        }
+
+                        // Show description
+                        cmd_spans.push(Span::styled(
+                            format!(" - {}", cmd.description),
+                            Style::default().fg(Color::DarkGray),
+                        ));
+
+                        lines.push(Line::from(cmd_spans));
+                    }
+
+                    // Help line
+                    let help_line = Line::from(vec![
+                        Span::styled(
+                            "↑↓:navigate Tab:complete Enter:execute C-g:cancel",
+                            Style::default().fg(Color::DarkGray),
+                        ),
+                        if filtered_commands.len() > max_visible {
+                            Span::styled(
+                                format!(" ({} more...)", filtered_commands.len() - max_visible),
+                                Style::default().fg(Color::Yellow),
+                            )
+                        } else {
+                            Span::raw("")
+                        },
+                    ]);
+                    lines.push(help_line);
+
+                    let widget = Paragraph::new(lines)
+                        .block(Block::default().borders(Borders::TOP).title("Command Palette"));
+
+                    frame.render_widget(widget, palette_area);
+                }
             }
         }
     }
@@ -483,4 +595,59 @@ fn create_status_bar(editor: &Editor) -> Paragraph<'static> {
 
     Paragraph::new(vec![Line::from(status_line)])
         .block(Block::default().borders(Borders::TOP))
+}
+
+/// Render the expanded status bar with which-key hints
+fn render_expanded_status_bar(frame: &mut Frame, editor: &Editor, area: Rect) {
+    // Split into which-key area (top) and status line (bottom)
+    let chunks = Layout::vertical([
+        Constraint::Min(2),    // Which-key hints
+        Constraint::Length(2), // Status line
+    ])
+    .split(area);
+
+    // Render which-key hints in the top area
+    let prefix_name = editor.status_bar.prefix_display_name().unwrap_or("?");
+
+    // Build which-key lines
+    let mut which_key_lines: Vec<Line> = Vec::new();
+
+    // Header line with prefix
+    let header = Line::from(vec![
+        Span::styled(
+            format!("{}-", prefix_name),
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        ),
+    ]);
+    which_key_lines.push(header);
+
+    // Build command hints - organize into columns
+    let items = &editor.status_bar.which_key_items;
+    if !items.is_empty() {
+        // Format each item as "key:command"
+        let mut hints: Vec<Span> = Vec::new();
+        for (i, item) in items.iter().enumerate() {
+            if i > 0 {
+                hints.push(Span::raw("  "));
+            }
+            hints.push(Span::styled(
+                &item.key_display,
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            ));
+            hints.push(Span::raw(":"));
+            hints.push(Span::styled(
+                item.command_name,
+                Style::default().fg(Color::White),
+            ));
+        }
+        which_key_lines.push(Line::from(hints));
+    }
+
+    let which_key_widget = Paragraph::new(which_key_lines)
+        .block(Block::default().borders(Borders::TOP));
+
+    frame.render_widget(which_key_widget, chunks[0]);
+
+    // Render normal status line at the bottom
+    frame.render_widget(create_status_bar(editor), chunks[1]);
 }

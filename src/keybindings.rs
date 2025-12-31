@@ -1,3 +1,4 @@
+use crate::commands::CtrlXPrefix;
 use crate::editor::Editor;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tui_textarea::{CursorMove, Input};
@@ -205,48 +206,35 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
         return result;
     }
 
-    // Handle C-x prefix sequences
-    if editor.last_key == Some((KeyCode::Char('x'), KeyModifiers::CONTROL)) {
-        match (key.code, key.modifiers) {
-            // C-x C-x - swap cursor/mark
-            (KeyCode::Char('x'), KeyModifiers::CONTROL) => {
-                editor.swap_cursor_mark();
-                editor.last_key = None;
-                return true;
-            }
-            // C-x C-f - Find/open file
-            (KeyCode::Char('f'), KeyModifiers::CONTROL) => {
-                editor.open_file_prompt();
-                editor.last_key = None;
-                return true;
-            }
-            // C-x C-s - Save file
-            (KeyCode::Char('s'), KeyModifiers::CONTROL) => {
-                let _ = editor.save_file();
-                editor.last_key = None;
-                return true;
-            }
-            // C-x C-w - Save as (write to new file)
-            (KeyCode::Char('w'), KeyModifiers::CONTROL) => {
-                editor.save_file_as_prompt();
-                editor.last_key = None;
-                return true;
-            }
-            // C-x k - Kill/delete file
-            (KeyCode::Char('k'), KeyModifiers::NONE) => {
-                editor.delete_file_prompt();
-                editor.last_key = None;
-                return true;
-            }
-            _ => {
-                editor.last_key = None;
-            }
+    // Handle active prefix (which-key mode)
+    if editor.status_bar.active_prefix.is_some() {
+        // Get the command for this follow-up key
+        let command = editor.status_bar.active_prefix
+            .as_ref()
+            .and_then(|p| p.get_command(&key));
+
+        // Clear the prefix state
+        editor.status_bar.clear_prefix();
+        editor.last_key = None;
+
+        // Execute command if found
+        if let Some(cmd_name) = command {
+            return execute_command(editor, cmd_name);
         }
+
+        // Invalid follow-up key - just return (prefix was cancelled)
+        return true;
     }
 
-    // Clear last_key for any key that isn't C-SPC or C-x
-    if !matches!((key.code, key.modifiers), (KeyCode::Char(' '), KeyModifiers::CONTROL))
-        && !matches!((key.code, key.modifiers), (KeyCode::Char('x'), KeyModifiers::CONTROL)) {
+    // Handle C-x prefix activation
+    if key.code == KeyCode::Char('x') && key.modifiers == KeyModifiers::CONTROL {
+        editor.status_bar.activate_prefix(Box::new(CtrlXPrefix));
+        editor.last_key = Some((KeyCode::Char('x'), KeyModifiers::CONTROL));
+        return true;
+    }
+
+    // Clear last_key for any key that isn't C-SPC
+    if !matches!((key.code, key.modifiers), (KeyCode::Char(' '), KeyModifiers::CONTROL)) {
         editor.last_key = None;
     }
 
@@ -296,6 +284,10 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
         // Settings menu
         (KeyCode::Char('?'), KeyModifiers::ALT) => {
             editor.open_settings_menu();
+        }
+        // M-x command palette
+        (KeyCode::Char('x'), KeyModifiers::ALT) => {
+            editor.open_command_palette();
         }
         // Switch focus to floating window with Shift+Tab
         (KeyCode::BackTab, _) => {
@@ -778,6 +770,103 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                 }
             }
 
+            crate::editor::FloatingMode::CommandPalette {
+                input,
+                cursor_pos,
+                filtered_commands,
+                selected,
+            } => {
+                match (key.code, key.modifiers) {
+                    // Cancel with ESC or C-g
+                    (KeyCode::Esc, _) | (KeyCode::Char('g'), KeyModifiers::CONTROL) => {
+                        editor.floating_window = None;
+                        editor.focus_floating = false;
+                        return true;
+                    }
+
+                    // Navigate up/down
+                    (KeyCode::Up, _) | (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
+                        if *selected > 0 {
+                            *selected -= 1;
+                        }
+                        return true;
+                    }
+                    (KeyCode::Down, _) | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
+                        if !filtered_commands.is_empty() && *selected < filtered_commands.len() - 1 {
+                            *selected += 1;
+                        }
+                        return true;
+                    }
+
+                    // Tab for completion - select the current item
+                    (KeyCode::Tab, _) => {
+                        if let Some(cmd) = filtered_commands.get(*selected) {
+                            *input = cmd.name.to_string();
+                            *cursor_pos = input.len();
+                            // Reset selection to top since input changed
+                            *selected = 0;
+                        }
+                        return true;
+                    }
+
+                    // Execute selected command
+                    (KeyCode::Enter, _) => {
+                        if let Some(cmd) = filtered_commands.get(*selected) {
+                            let cmd_name = cmd.name;
+                            // Close the palette first
+                            editor.floating_window = None;
+                            editor.focus_floating = false;
+                            // Execute the command
+                            return execute_command(editor, cmd_name);
+                        }
+                        return true;
+                    }
+
+                    // Text editing
+                    _ => {
+                        let needs_filter = match handle_string_edit_key(&key, input, cursor_pos) {
+                            MinibufferKeyResult::Cancel => {
+                                editor.floating_window = None;
+                                editor.focus_floating = false;
+                                return true;
+                            }
+                            MinibufferKeyResult::Execute => {
+                                // Try to execute by exact name match
+                                if let Some(cmd) = filtered_commands.get(*selected) {
+                                    let cmd_name = cmd.name;
+                                    editor.floating_window = None;
+                                    editor.focus_floating = false;
+                                    return execute_command(editor, cmd_name);
+                                }
+                                false
+                            }
+                            MinibufferKeyResult::Handled => true,
+                            MinibufferKeyResult::NotHandled => false,
+                        };
+
+                        if needs_filter {
+                            // Get the updated input
+                            let updated_input = input.clone();
+                            // Drop the borrow and filter
+                            let _ = fw; // End borrow
+                            let new_filtered = editor.filter_commands(&updated_input);
+
+                            // Re-borrow and update
+                            if let Some(ref mut fw) = editor.floating_window {
+                                if let crate::editor::FloatingMode::CommandPalette {
+                                    filtered_commands,
+                                    selected,
+                                    ..
+                                } = &mut fw.mode {
+                                    *filtered_commands = new_filtered;
+                                    *selected = 0;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             crate::editor::FloatingMode::Confirm {
                 steps,
                 current_index,
@@ -1013,5 +1102,131 @@ fn should_quit(editor: &mut Editor, key: &KeyEvent) -> bool {
             }
         }
         _ => false,
+    }
+}
+
+/// Execute a command by name
+fn execute_command(editor: &mut Editor, command_name: &str) -> bool {
+    match command_name {
+        // File commands
+        "open-file" => {
+            editor.open_file_prompt();
+            true
+        }
+        "save-file" => {
+            let _ = editor.save_file();
+            true
+        }
+        "save-file-as" => {
+            editor.save_file_as_prompt();
+            true
+        }
+        "delete-file" => {
+            editor.delete_file_prompt();
+            true
+        }
+
+        // Selection commands
+        "swap-cursor-mark" => {
+            editor.swap_cursor_mark();
+            true
+        }
+
+        // System commands
+        "force-quit" => {
+            let _ = ratatui::restore();
+            std::process::exit(0);
+        }
+        "operate" => {
+            editor.toggle_floating_window();
+            true
+        }
+        "settings" => {
+            editor.open_settings_menu();
+            true
+        }
+        "execute-command" => {
+            editor.open_command_palette();
+            true
+        }
+
+        // Movement commands
+        "forward-char" => {
+            editor.move_cursor(CursorMove::Forward);
+            true
+        }
+        "backward-char" => {
+            editor.move_cursor(CursorMove::Back);
+            true
+        }
+        "next-line" => {
+            if editor.is_at_last_line() {
+                editor.textarea.move_cursor(CursorMove::End);
+                editor.textarea.insert_newline();
+                editor.reset_kill_sequence();
+                editor.mark_modified();
+            } else {
+                editor.move_cursor(CursorMove::Down);
+            }
+            true
+        }
+        "previous-line" => {
+            editor.move_cursor(CursorMove::Up);
+            true
+        }
+        "beginning-of-line" => {
+            editor.move_cursor(CursorMove::Head);
+            true
+        }
+        "end-of-line" => {
+            editor.move_cursor(CursorMove::End);
+            true
+        }
+        "forward-word" => {
+            editor.move_word_forward();
+            true
+        }
+        "backward-word" => {
+            editor.move_word_backward();
+            true
+        }
+
+        // Edit commands
+        "kill-line" => {
+            editor.kill_to_end_of_line();
+            editor.mark_modified();
+            true
+        }
+        "kill-line-backward" => {
+            editor.kill_to_beginning_of_line();
+            editor.mark_modified();
+            true
+        }
+        "yank" => {
+            editor.yank();
+            editor.mark_modified();
+            true
+        }
+
+        // Selection commands
+        "set-mark" => {
+            editor.set_mark();
+            true
+        }
+        "kill-region" => {
+            editor.kill_region();
+            editor.mark_modified();
+            true
+        }
+        "copy-region" => {
+            editor.copy_region();
+            true
+        }
+
+        // Unknown command
+        _ => {
+            // Command not found - just return true to continue
+            true
+        }
     }
 }
