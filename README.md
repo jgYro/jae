@@ -13,9 +13,10 @@ Kind of bored of emacs, vim and helix and general the paradigms of modal editing
 - It is expected to use a terminal multiplexer like tmux or zellij
 - There will be no direct git support outside of gutter type rendering
 - - I use a custom tmux binding for a floating window with lazygit to handle majority of that
-- Similarly, there will be no directly integrate terminal
+- Similarly, there will be no directly integrated terminal
 
 ## To be done
+- [ ] Keybinds for handling pairs (like vim's ```ci"``` or helix's ```maf```)
 - [ ] LSP
 - [ ] Tree-sitter
 - [ ] Multiple Buffers (not sure how I want to do this yet)
