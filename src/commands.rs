@@ -199,6 +199,96 @@ impl KeyPrefix for CtrlXPrefix {
     }
 }
 
+// ============ TEST PREFIXES (DELETE AFTER TESTING) ============
+
+/// Test prefix 1 (C-t) - many commands to test paging
+pub struct TestPrefix1;
+
+impl KeyPrefix for TestPrefix1 {
+    fn trigger(&self) -> KeyCombo {
+        KeyCombo::ctrl('t')
+    }
+
+    fn display_name(&self) -> &'static str {
+        "C-t"
+    }
+
+    fn get_command(&self, key: &KeyEvent) -> Option<&'static str> {
+        match (key.code, key.modifiers) {
+            (KeyCode::Char('a'), KeyModifiers::NONE) => Some("test-alpha"),
+            (KeyCode::Char('b'), KeyModifiers::NONE) => Some("test-bravo"),
+            (KeyCode::Char('c'), KeyModifiers::NONE) => Some("test-charlie"),
+            (KeyCode::Char('d'), KeyModifiers::NONE) => Some("test-delta"),
+            (KeyCode::Char('e'), KeyModifiers::NONE) => Some("test-echo"),
+            (KeyCode::Char('f'), KeyModifiers::NONE) => Some("test-foxtrot"),
+            (KeyCode::Char('g'), KeyModifiers::NONE) => Some("test-golf"),
+            (KeyCode::Char('h'), KeyModifiers::NONE) => Some("test-hotel"),
+            (KeyCode::Char('i'), KeyModifiers::NONE) => Some("test-india"),
+            (KeyCode::Char('j'), KeyModifiers::NONE) => Some("test-juliet"),
+            (KeyCode::Char('k'), KeyModifiers::NONE) => Some("test-kilo"),
+            (KeyCode::Char('l'), KeyModifiers::NONE) => Some("test-lima"),
+            (KeyCode::Char('m'), KeyModifiers::NONE) => Some("test-mike"),
+            (KeyCode::Char('n'), KeyModifiers::NONE) => Some("test-november"),
+            (KeyCode::Char('o'), KeyModifiers::NONE) => Some("test-oscar"),
+            (KeyCode::Char('p'), KeyModifiers::NONE) => Some("test-papa"),
+            _ => None,
+        }
+    }
+
+    fn bindings(&self) -> Vec<PrefixBinding> {
+        vec![
+            PrefixBinding { key: KeyCombo::plain('a'), command: "test-alpha" },
+            PrefixBinding { key: KeyCombo::plain('b'), command: "test-bravo" },
+            PrefixBinding { key: KeyCombo::plain('c'), command: "test-charlie" },
+            PrefixBinding { key: KeyCombo::plain('d'), command: "test-delta" },
+            PrefixBinding { key: KeyCombo::plain('e'), command: "test-echo" },
+            PrefixBinding { key: KeyCombo::plain('f'), command: "test-foxtrot" },
+            PrefixBinding { key: KeyCombo::plain('g'), command: "test-golf" },
+            PrefixBinding { key: KeyCombo::plain('h'), command: "test-hotel" },
+            PrefixBinding { key: KeyCombo::plain('i'), command: "test-india" },
+            PrefixBinding { key: KeyCombo::plain('j'), command: "test-juliet" },
+            PrefixBinding { key: KeyCombo::plain('k'), command: "test-kilo" },
+            PrefixBinding { key: KeyCombo::plain('l'), command: "test-lima" },
+            PrefixBinding { key: KeyCombo::plain('m'), command: "test-mike" },
+            PrefixBinding { key: KeyCombo::plain('n'), command: "test-november" },
+            PrefixBinding { key: KeyCombo::plain('o'), command: "test-oscar" },
+            PrefixBinding { key: KeyCombo::plain('p'), command: "test-papa" },
+        ]
+    }
+}
+
+/// Test prefix 2 (C-c) - another test prefix
+pub struct TestPrefix2;
+
+impl KeyPrefix for TestPrefix2 {
+    fn trigger(&self) -> KeyCombo {
+        KeyCombo::ctrl('c')
+    }
+
+    fn display_name(&self) -> &'static str {
+        "C-c"
+    }
+
+    fn get_command(&self, key: &KeyEvent) -> Option<&'static str> {
+        match (key.code, key.modifiers) {
+            (KeyCode::Char('1'), KeyModifiers::NONE) => Some("test-one"),
+            (KeyCode::Char('2'), KeyModifiers::NONE) => Some("test-two"),
+            (KeyCode::Char('3'), KeyModifiers::NONE) => Some("test-three"),
+            _ => None,
+        }
+    }
+
+    fn bindings(&self) -> Vec<PrefixBinding> {
+        vec![
+            PrefixBinding { key: KeyCombo::plain('1'), command: "test-one" },
+            PrefixBinding { key: KeyCombo::plain('2'), command: "test-two" },
+            PrefixBinding { key: KeyCombo::plain('3'), command: "test-three" },
+        ]
+    }
+}
+
+// ============ END TEST PREFIXES ============
+
 /// Command registry holding all commands and prefixes
 pub struct CommandRegistry {
     commands: HashMap<&'static str, Command>,
@@ -218,6 +308,9 @@ impl CommandRegistry {
 
     fn register_prefixes(&mut self) {
         self.prefixes.push(Box::new(CtrlXPrefix));
+        // TEST PREFIXES (DELETE AFTER TESTING)
+        self.prefixes.push(Box::new(TestPrefix1));
+        self.prefixes.push(Box::new(TestPrefix2));
     }
 
     fn register_all_commands(&mut self) {
@@ -428,6 +521,32 @@ impl CommandRegistry {
             category: Category::System,
             keybinding: Some(Keybinding::Single(KeyCombo::alt('x'))),
         });
+
+        // ============ TEST COMMANDS (DELETE AFTER TESTING) ============
+        // TestPrefix1 commands (C-t)
+        for name in &[
+            "test-alpha", "test-bravo", "test-charlie", "test-delta",
+            "test-echo", "test-foxtrot", "test-golf", "test-hotel",
+            "test-india", "test-juliet", "test-kilo", "test-lima",
+            "test-mike", "test-november", "test-oscar", "test-papa",
+        ] {
+            self.register(Command {
+                name,
+                description: "Test command (no-op)",
+                category: Category::System,
+                keybinding: None,
+            });
+        }
+        // TestPrefix2 commands (C-c)
+        for name in &["test-one", "test-two", "test-three"] {
+            self.register(Command {
+                name,
+                description: "Test command (no-op)",
+                category: Category::System,
+                keybinding: None,
+            });
+        }
+        // ============ END TEST COMMANDS ============
     }
 
     fn register(&mut self, command: Command) {

@@ -394,6 +394,7 @@ pub struct StatusBarState {
     pub active_prefix: Option<Box<dyn KeyPrefix>>,
     pub which_key_items: Vec<WhichKeyItem>,
     pub command_registry: CommandRegistry,
+    pub which_key_page: usize,  // Current page for paging through commands
 }
 
 impl StatusBarState {
@@ -403,10 +404,11 @@ impl StatusBarState {
             active_prefix: None,
             which_key_items: Vec::new(),
             command_registry: CommandRegistry::new(),
+            which_key_page: 0,
         }
     }
 
-    /// Activate a prefix and populate which-key items
+    /// Activate a prefix and expand which-key immediately
     pub fn activate_prefix(&mut self, prefix: Box<dyn KeyPrefix>) {
         let bindings = prefix.bindings();
         self.which_key_items = bindings
@@ -417,7 +419,13 @@ impl StatusBarState {
             })
             .collect();
         self.active_prefix = Some(prefix);
-        self.expanded = true;
+        self.which_key_page = 0;  // Reset to first page
+        self.expanded = true;  // Show immediately
+    }
+
+    /// Check if there's an active prefix
+    pub fn has_active_prefix(&self) -> bool {
+        self.active_prefix.is_some()
     }
 
     /// Clear the active prefix and collapse the status bar
@@ -425,11 +433,38 @@ impl StatusBarState {
         self.active_prefix = None;
         self.which_key_items.clear();
         self.expanded = false;
+        self.which_key_page = 0;
     }
 
     /// Get the display name of the active prefix
     pub fn prefix_display_name(&self) -> Option<&'static str> {
         self.active_prefix.as_ref().map(|p| p.display_name())
+    }
+
+    /// Navigate to next page of which-key (M->)
+    pub fn which_key_next_page(&mut self, items_per_page: usize) {
+        if self.which_key_items.is_empty() || items_per_page == 0 {
+            return;
+        }
+        let total_pages = (self.which_key_items.len() + items_per_page - 1) / items_per_page;
+        if self.which_key_page + 1 < total_pages {
+            self.which_key_page += 1;
+        }
+    }
+
+    /// Navigate to previous page of which-key (M-<)
+    pub fn which_key_prev_page(&mut self) {
+        if self.which_key_page > 0 {
+            self.which_key_page -= 1;
+        }
+    }
+
+    /// Get total number of pages
+    pub fn which_key_total_pages(&self, items_per_page: usize) -> usize {
+        if self.which_key_items.is_empty() || items_per_page == 0 {
+            return 1;
+        }
+        (self.which_key_items.len() + items_per_page - 1) / items_per_page
     }
 }
 

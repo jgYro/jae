@@ -8,8 +8,8 @@ use ratatui::{
 };
 
 pub fn draw(frame: &mut Frame, editor: &Editor) {
-    // Dynamic status bar height: 5 lines when expanded, 2 when collapsed
-    let status_height = if editor.status_bar.expanded { 5 } else { 2 };
+    // Status bar is always 3 lines: which-key line + status line + border
+    let status_height = 3;
 
     let chunks = Layout::vertical([
         Constraint::Min(3),
@@ -20,12 +20,8 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
     // Text area
     frame.render_widget(&editor.textarea, chunks[0]);
 
-    // Status bar (with which-key when expanded)
-    if editor.status_bar.expanded {
-        render_expanded_status_bar(frame, editor, chunks[1]);
-    } else {
-        frame.render_widget(create_status_bar(editor), chunks[1]);
-    }
+    // Status bar with optional which-key line above
+    render_status_bar(frame, editor, chunks[1]);
 
     // Floating window
     if let Some(ref fw) = editor.floating_window {
@@ -443,8 +439,17 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
                     // Build command list
                     let mut lines = vec![input_line];
 
-                    // Show filtered commands with selection highlight
-                    for (i, cmd) in filtered_commands.iter().take(max_visible).enumerate() {
+                    // Calculate scroll offset to keep selection at top of visible window
+                    let scroll_offset = if filtered_commands.len() <= max_visible {
+                        0  // All items fit, no scrolling needed
+                    } else {
+                        // Keep selected at top, but don't scroll past end
+                        (*selected).min(filtered_commands.len() - max_visible)
+                    };
+
+                    // Show filtered commands with selection highlight (scrolled view)
+                    let end_idx = (scroll_offset + max_visible).min(filtered_commands.len());
+                    for (i, cmd) in filtered_commands.iter().enumerate().skip(scroll_offset).take(max_visible) {
                         let is_selected = i == *selected;
                         let prefix = if is_selected { "→ " } else { "  " };
 
@@ -484,20 +489,22 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
                         lines.push(Line::from(cmd_spans));
                     }
 
-                    // Help line
+                    // Help line with position indicator
+                    let position_info = if filtered_commands.len() > max_visible {
+                        format!(" [{}-{}/{}]", scroll_offset + 1, end_idx, filtered_commands.len())
+                    } else {
+                        String::new()
+                    };
+
                     let help_line = Line::from(vec![
                         Span::styled(
                             "↑↓:navigate Tab:complete Enter:execute C-g:cancel",
                             Style::default().fg(Color::DarkGray),
                         ),
-                        if filtered_commands.len() > max_visible {
-                            Span::styled(
-                                format!(" ({} more...)", filtered_commands.len() - max_visible),
-                                Style::default().fg(Color::Yellow),
-                            )
-                        } else {
-                            Span::raw("")
-                        },
+                        Span::styled(
+                            position_info,
+                            Style::default().fg(Color::Yellow),
+                        ),
                     ]);
                     lines.push(help_line);
 
@@ -511,143 +518,118 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
     }
 }
 
-fn create_status_bar(editor: &Editor) -> Paragraph<'static> {
-    // File name indicator
-    let file_indicator = {
-        let modified_marker = if editor.modified { "*" } else { "" };
-        let filename = editor.current_file
-            .as_ref()
-            .and_then(|p| p.file_name())
-            .and_then(|n| n.to_str())
-            .map(|s| format!("{}{} ", modified_marker, s))
-            .unwrap_or_else(|| format!("{}[No File] ", modified_marker));
+/// Render the status bar (2 lines: which-key above, status below)
+fn render_status_bar(frame: &mut Frame, editor: &Editor, area: Rect) {
+    let mut lines: Vec<Line> = Vec::new();
 
-        Span::styled(
-            filename,
-            Style::default()
-                .fg(if editor.modified { Color::Red } else { Color::Green })
-                .add_modifier(Modifier::BOLD),
-        )
-    };
+    // Line 1: Which-key hints (if expanded) or empty
+    if editor.status_bar.expanded && !editor.status_bar.which_key_items.is_empty() {
+        let prefix_name = editor.status_bar.prefix_display_name().unwrap_or("?");
+        let items = &editor.status_bar.which_key_items;
+        let page = editor.status_bar.which_key_page;
 
-    let mark_indicator = if editor.mark_active {
-        Span::styled(
-            "MARK ",
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        )
+        // Calculate items per page based on terminal width
+        // Estimate ~20 chars per item on average
+        let available_width = area.width.saturating_sub(20) as usize; // Reserve space for prefix and page info
+        let items_per_page = (available_width / 18).max(3); // At least 3 items per page
+
+        let total_pages = editor.status_bar.which_key_total_pages(items_per_page);
+        // Clamp page to valid range in case of mismatch
+        let page = page.min(total_pages.saturating_sub(1));
+        let start = (page * items_per_page).min(items.len());
+        let end = (start + items_per_page).min(items.len());
+
+        // Build which-key line
+        let mut spans: Vec<Span> = Vec::new();
+
+        // Prefix
+        spans.push(Span::styled(
+            format!("{}- ", prefix_name),
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        ));
+
+        // Items for current page
+        for (i, item) in items[start..end].iter().enumerate() {
+            if i > 0 {
+                spans.push(Span::raw("  "));
+            }
+            spans.push(Span::styled(
+                item.key_display.clone(),
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::styled(":", Style::default().fg(Color::DarkGray)));
+            spans.push(Span::styled(
+                item.command_name.to_string(),
+                Style::default().fg(Color::White),
+            ));
+        }
+
+        // Page indicator if multiple pages
+        if total_pages > 1 {
+            spans.push(Span::styled(
+                format!("  [{}/{}] M-</>", page + 1, total_pages),
+                Style::default().fg(Color::DarkGray),
+            ));
+        }
+
+        lines.push(Line::from(spans));
     } else {
-        Span::raw("")
-    };
-
-    let floating_indicator = if editor.floating_window.is_some() {
-        Span::styled(
-            if editor.focus_floating {
-                "FLOAT* "
-            } else {
-                "FLOAT "
-            },
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        )
-    } else {
-        Span::raw("")
-    };
-
-    let mut help_items = vec![
-        ("C-x C-f", "open"),
-        ("C-x C-s", "save"),
-        ("C-SPC", "mark"),
-        ("C-w", "kill"),
-        ("M-w", "copy"),
-        ("C-y", "yank"),
-        ("M-q", "menu"),
-        ("M-?", "settings"),
-        ("C-g/ESC", "quit"),
-        ("C-x C-q", "force quit"),
-    ];
-
-    // Show focus switching help when floating window is open
-    if editor.floating_window.is_some() {
-        help_items.insert(7, ("Tab", "focus"));
+        // No which-key - empty line
+        lines.push(Line::from(""));
     }
 
-    let mut help_spans = Vec::new();
-    for (i, (key, desc)) in help_items.iter().enumerate() {
-        if i > 0 {
-            help_spans.push(Span::raw(" "));
-        }
-        help_spans.push(Span::styled(
-            *key,
-            Style::default().fg(Color::Cyan),
+    // Line 2: Status info
+    let mut status_spans: Vec<Span> = Vec::new();
+
+    // File indicator
+    let modified_marker = if editor.modified { "*" } else { "" };
+    let filename = editor.current_file
+        .as_ref()
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+        .map(|s| format!("{}{}", modified_marker, s))
+        .unwrap_or_else(|| format!("{}[No File]", modified_marker));
+
+    status_spans.push(Span::styled(
+        filename,
+        Style::default()
+            .fg(if editor.modified { Color::Red } else { Color::Green })
+            .add_modifier(Modifier::BOLD),
+    ));
+
+    // Mark indicator
+    if editor.mark_active {
+        status_spans.push(Span::styled(
+            " MARK",
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
         ));
-        help_spans.push(Span::raw(":"));
-        help_spans.push(Span::styled(
-            *desc,
+    }
+
+    // Floating indicator
+    if editor.floating_window.is_some() {
+        status_spans.push(Span::styled(
+            if editor.focus_floating { " FLOAT*" } else { " FLOAT" },
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        ));
+    }
+
+    // Help hint (different when which-key is active)
+    if editor.status_bar.has_active_prefix() {
+        status_spans.push(Span::styled(
+            " | ESC cancel",
+            Style::default().fg(Color::DarkGray),
+        ));
+    } else {
+        status_spans.push(Span::styled(
+            " | C-x C-t C-c prefix  M-x cmd  M-q menu  ESC quit",
             Style::default().fg(Color::DarkGray),
         ));
     }
 
-    let mut status_line = vec![file_indicator, mark_indicator, floating_indicator];
-    status_line.extend(help_spans);
+    lines.push(Line::from(status_spans));
 
-    Paragraph::new(vec![Line::from(status_line)])
-        .block(Block::default().borders(Borders::TOP))
-}
-
-/// Render the expanded status bar with which-key hints
-fn render_expanded_status_bar(frame: &mut Frame, editor: &Editor, area: Rect) {
-    // Split into which-key area (top) and status line (bottom)
-    let chunks = Layout::vertical([
-        Constraint::Min(2),    // Which-key hints
-        Constraint::Length(2), // Status line
-    ])
-    .split(area);
-
-    // Render which-key hints in the top area
-    let prefix_name = editor.status_bar.prefix_display_name().unwrap_or("?");
-
-    // Build which-key lines
-    let mut which_key_lines: Vec<Line> = Vec::new();
-
-    // Header line with prefix
-    let header = Line::from(vec![
-        Span::styled(
-            format!("{}-", prefix_name),
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-        ),
-    ]);
-    which_key_lines.push(header);
-
-    // Build command hints - organize into columns
-    let items = &editor.status_bar.which_key_items;
-    if !items.is_empty() {
-        // Format each item as "key:command"
-        let mut hints: Vec<Span> = Vec::new();
-        for (i, item) in items.iter().enumerate() {
-            if i > 0 {
-                hints.push(Span::raw("  "));
-            }
-            hints.push(Span::styled(
-                &item.key_display,
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-            ));
-            hints.push(Span::raw(":"));
-            hints.push(Span::styled(
-                item.command_name,
-                Style::default().fg(Color::White),
-            ));
-        }
-        which_key_lines.push(Line::from(hints));
-    }
-
-    let which_key_widget = Paragraph::new(which_key_lines)
+    let widget = Paragraph::new(lines)
         .block(Block::default().borders(Borders::TOP));
 
-    frame.render_widget(which_key_widget, chunks[0]);
-
-    // Render normal status line at the bottom
-    frame.render_widget(create_status_bar(editor), chunks[1]);
+    frame.render_widget(widget, area);
 }

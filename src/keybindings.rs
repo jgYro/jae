@@ -1,4 +1,4 @@
-use crate::commands::CtrlXPrefix;
+use crate::commands::{CtrlXPrefix, TestPrefix1, TestPrefix2};
 use crate::editor::Editor;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tui_textarea::{CursorMove, Input};
@@ -208,6 +208,24 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
 
     // Handle active prefix (which-key mode)
     if editor.status_bar.active_prefix.is_some() {
+        // Handle page navigation with M-< and M-> when which-key is expanded
+        if editor.status_bar.expanded {
+            match (key.code, key.modifiers) {
+                // M-< (previous page)
+                (KeyCode::Char('<'), KeyModifiers::ALT) => {
+                    editor.status_bar.which_key_prev_page();
+                    return true;
+                }
+                // M-> (next page) - use large items_per_page to ensure we always advance at least one page
+                (KeyCode::Char('>'), KeyModifiers::ALT) => {
+                    // Use 3 as minimum (matches ui.rs .max(3))
+                    editor.status_bar.which_key_next_page(3);
+                    return true;
+                }
+                _ => {}
+            }
+        }
+
         // Get the command for this follow-up key
         let command = editor.status_bar.active_prefix
             .as_ref()
@@ -230,6 +248,20 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
     if key.code == KeyCode::Char('x') && key.modifiers == KeyModifiers::CONTROL {
         editor.status_bar.activate_prefix(Box::new(CtrlXPrefix));
         editor.last_key = Some((KeyCode::Char('x'), KeyModifiers::CONTROL));
+        return true;
+    }
+
+    // TEST: Handle C-t prefix activation (delete after testing)
+    if key.code == KeyCode::Char('t') && key.modifiers == KeyModifiers::CONTROL {
+        editor.status_bar.activate_prefix(Box::new(TestPrefix1));
+        editor.last_key = Some((KeyCode::Char('t'), KeyModifiers::CONTROL));
+        return true;
+    }
+
+    // TEST: Handle C-c prefix activation (delete after testing)
+    if key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL {
+        editor.status_bar.activate_prefix(Box::new(TestPrefix2));
+        editor.last_key = Some((KeyCode::Char('c'), KeyModifiers::CONTROL));
         return true;
     }
 
@@ -794,6 +826,18 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                     (KeyCode::Down, _) | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
                         if !filtered_commands.is_empty() && *selected < filtered_commands.len() - 1 {
                             *selected += 1;
+                        }
+                        return true;
+                    }
+
+                    // Jump by 10 with M-< and M->
+                    (KeyCode::Char('<'), KeyModifiers::ALT) => {
+                        *selected = selected.saturating_sub(10);
+                        return true;
+                    }
+                    (KeyCode::Char('>'), KeyModifiers::ALT) => {
+                        if !filtered_commands.is_empty() {
+                            *selected = (*selected + 10).min(filtered_commands.len() - 1);
                         }
                         return true;
                     }
