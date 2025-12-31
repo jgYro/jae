@@ -6,7 +6,8 @@ mod ui;
 
 use editor::Editor;
 use keybindings::handle_input;
-use ratatui::{crossterm::event::{self, Event}, Terminal};
+use ratatui::crossterm::event::{self, Event, KeyEventKind};
+use ratatui::Terminal;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = ratatui::init();
@@ -26,7 +27,8 @@ fn run_app(
         terminal.draw(|frame| ui::draw(frame, editor))?;
 
         if let Event::Key(key) = event::read()? {
-            if !handle_input(editor, key) {
+            // Only handle key press events (Windows sends both Press and Release)
+            if key.kind == KeyEventKind::Press && !handle_input(editor, key) {
                 break;
             }
         }
