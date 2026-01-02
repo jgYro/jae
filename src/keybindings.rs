@@ -1,4 +1,4 @@
-use crate::commands::{CtrlXPrefix, TestPrefix1, TestPrefix2};
+use crate::commands::CtrlXPrefix;
 use crate::editor::Editor;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tui_textarea::{CursorMove, Input};
@@ -176,12 +176,13 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
 
     // C-x C-q: Ultimate force quit - bypasses everything, exits immediately
     // This is the "kill switch" that always works regardless of editor state
-    if editor.last_key == Some((KeyCode::Char('x'), KeyModifiers::CONTROL)) {
-        if key.code == KeyCode::Char('q') && key.modifiers == KeyModifiers::CONTROL {
-            // Restore terminal state before force quitting
-            let _ = ratatui::restore();
-            std::process::exit(0);
-        }
+    if editor.last_key == Some((KeyCode::Char('x'), KeyModifiers::CONTROL))
+        && key.code == KeyCode::Char('q')
+        && key.modifiers == KeyModifiers::CONTROL
+    {
+        // Restore terminal state before force quitting
+        ratatui::restore();
+        std::process::exit(0);
     }
 
     // Track if we had a floating window before should_quit
@@ -256,20 +257,6 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
         return true;
     }
 
-    // TEST: Handle C-t prefix activation (delete after testing)
-    if key.code == KeyCode::Char('t') && key.modifiers == KeyModifiers::CONTROL {
-        editor.status_bar.activate_prefix(Box::new(TestPrefix1));
-        editor.last_key = Some((KeyCode::Char('t'), KeyModifiers::CONTROL));
-        return true;
-    }
-
-    // TEST: Handle C-c prefix activation (delete after testing)
-    if key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL {
-        editor.status_bar.activate_prefix(Box::new(TestPrefix2));
-        editor.last_key = Some((KeyCode::Char('c'), KeyModifiers::CONTROL));
-        return true;
-    }
-
     // Clear last_key for any key that isn't C-SPC
     if !matches!((key.code, key.modifiers), (KeyCode::Char(' '), KeyModifiers::CONTROL)) {
         editor.last_key = None;
@@ -287,9 +274,10 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
         (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
             if editor.is_at_last_line() {
                 // At the end of document, insert a newline
+                editor.save_undo_state();
                 editor.textarea.move_cursor(CursorMove::End);
                 editor.textarea.insert_newline();
-                editor.reset_kill_sequence();
+                // Text input resets selection
                 editor.mark_modified();
             } else {
                 // Normal case: just move down
@@ -347,7 +335,8 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
 
         // Kill and yank operations
         (KeyCode::Char('w'), KeyModifiers::CONTROL) => {
-            editor.kill_region();
+            editor.save_undo_state();
+            editor.cut_region();
             editor.mark_modified();
         }
         (KeyCode::Char('w'), KeyModifiers::ALT) => {
@@ -355,24 +344,50 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
             // Copy doesn't modify buffer
         }
         (KeyCode::Char('y'), KeyModifiers::CONTROL) => {
-            editor.yank();
+            editor.save_undo_state();
+            editor.paste();
             editor.mark_modified();
         }
         (KeyCode::Char('k'), KeyModifiers::CONTROL) => {
-            editor.kill_to_end_of_line();
+            editor.save_undo_state();
+            editor.cut_to_end_of_line();
             editor.mark_modified();
         }
-        (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
-            editor.kill_to_beginning_of_line();
+        // Undo (C-z)
+        (KeyCode::Char('z'), mods) if mods.contains(KeyModifiers::CONTROL) && !mods.contains(KeyModifiers::SHIFT) => {
+            editor.undo();
+        }
+
+        // Redo (M-z)
+        (KeyCode::Char('z'), mods) if mods.contains(KeyModifiers::ALT) => {
+            editor.redo();
+        }
+
+        // Word delete operations
+        (KeyCode::Char('d'), mods) if mods.contains(KeyModifiers::ALT) => {
+            editor.save_undo_state();
+            editor.textarea.delete_next_word();
+            editor.mark_modified();
+        }
+        (KeyCode::Backspace, mods) if mods.contains(KeyModifiers::ALT) => {
+            editor.save_undo_state();
+            editor.textarea.delete_word();
             editor.mark_modified();
         }
 
-        // Default: pass through to textarea
+        // Default: pass through to textarea (without tui-textarea's default shortcuts)
         _ => {
+            // Save undo state before text-changing keys
+            if matches!(key.code,
+                KeyCode::Char(_) | KeyCode::Backspace | KeyCode::Delete | KeyCode::Enter | KeyCode::Tab
+            ) {
+                editor.save_undo_state();
+            }
             let event = ratatui::crossterm::event::Event::Key(key);
             let input: Input = event.into();
-            editor.textarea.input(input);
-            editor.reset_kill_sequence();
+            // Use input_without_shortcuts to prevent tui-textarea's default keybindings
+            // (like C-u for undo) from interfering with our custom handling
+            editor.textarea.input_without_shortcuts(input);
             // Mark as modified for text-changing keys
             if matches!(key.code,
                 KeyCode::Char(_) | KeyCode::Backspace | KeyCode::Delete | KeyCode::Enter | KeyCode::Tab
@@ -456,17 +471,14 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                     // Toggle boolean or adjust number values
                     (KeyCode::Enter, _) | (KeyCode::Char(' '), _) => {
                         if let Some(item) = items.get_mut(*selected) {
-                            match &mut item.value {
-                                crate::editor::SettingValue::Bool(b) => {
-                                    *b = !*b;
-                                    // Apply the setting
-                                    match item.name.as_str() {
-                                        "Show Metadata" => editor.settings.show_metadata = *b,
-                                        "Show Preview" => editor.settings.show_preview = *b,
-                                        _ => {}
-                                    }
+                            if let crate::editor::SettingValue::Bool(b) = &mut item.value {
+                                *b = !*b;
+                                // Apply the setting
+                                match item.name.as_str() {
+                                    "Show Metadata" => editor.settings.show_metadata = *b,
+                                    "Show Preview" => editor.settings.show_preview = *b,
+                                    _ => {}
                                 }
-                                _ => {}
                             }
                         }
                     }
@@ -512,9 +524,9 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                         // Now update colors
                         if let Some((is_cursor, index)) = update_info {
                             if is_cursor {
-                                editor.settings.cursor_color = editor.index_to_color(index, false);
+                                editor.settings.cursor_color = editor.settings.index_to_color(index, false);
                             } else {
-                                editor.settings.selection_color = editor.index_to_color(index, true);
+                                editor.settings.selection_color = editor.settings.index_to_color(index, true);
                             }
                             editor.update_textarea_colors();
                         }
@@ -563,9 +575,9 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                         // Now update colors
                         if let Some((is_cursor, index)) = update_info {
                             if is_cursor {
-                                editor.settings.cursor_color = editor.index_to_color(index, false);
+                                editor.settings.cursor_color = editor.settings.index_to_color(index, false);
                             } else {
-                                editor.settings.selection_color = editor.index_to_color(index, true);
+                                editor.settings.selection_color = editor.settings.index_to_color(index, true);
                             }
                             editor.update_textarea_colors();
                         }
@@ -576,68 +588,6 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                     _ => {}
                 }
             }
-            crate::editor::FloatingMode::TextEdit => {
-                // Text edit mode - use tui_textarea's built-in handling
-                match (key.code, key.modifiers) {
-                    // Close floating window with ESC or M-q
-                    (KeyCode::Esc, _) | (KeyCode::Char('q'), KeyModifiers::ALT) => {
-                        editor.floating_window = None;
-                        editor.focus_floating = false;
-                    }
-
-                    // Switch focus with Tab
-                    (KeyCode::Tab, _) => {
-                        editor.focus_floating = false;
-                    }
-
-                    // Basic movement commands
-                    (KeyCode::Char('f'), KeyModifiers::CONTROL) => {
-                        fw.textarea.move_cursor(CursorMove::Forward);
-                    }
-                    (KeyCode::Char('b'), KeyModifiers::CONTROL) => {
-                        fw.textarea.move_cursor(CursorMove::Back);
-                    }
-                    (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
-                        fw.textarea.move_cursor(CursorMove::Down);
-                    }
-                    (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
-                        fw.textarea.move_cursor(CursorMove::Up);
-                    }
-                    (KeyCode::Char('a'), KeyModifiers::CONTROL) => {
-                        fw.textarea.move_cursor(CursorMove::Head);
-                    }
-                    (KeyCode::Char('e'), KeyModifiers::CONTROL) => {
-                        fw.textarea.move_cursor(CursorMove::End);
-                    }
-
-                    // Word movement
-                    (KeyCode::Char('f'), KeyModifiers::ALT) => {
-                        fw.textarea.move_cursor(CursorMove::WordForward);
-                    }
-                    (KeyCode::Char('b'), KeyModifiers::ALT) => {
-                        fw.textarea.move_cursor(CursorMove::WordBack);
-                    }
-
-                    // Kill/yank operations
-                    (KeyCode::Char('k'), KeyModifiers::CONTROL) => {
-                        fw.textarea.delete_line_by_end();
-                    }
-                    (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
-                        fw.textarea.delete_line_by_head();
-                    }
-                    (KeyCode::Char('d'), KeyModifiers::ALT) => {
-                        fw.textarea.delete_word();
-                    }
-
-                    // Default: pass through to floating window textarea
-                    _ => {
-                        let event = ratatui::crossterm::event::Event::Key(key);
-                        let input: Input = event.into();
-                        fw.textarea.input(input);
-                    }
-                }
-            }
-
             crate::editor::FloatingMode::Minibuffer {
                 input,
                 cursor_pos,
@@ -756,30 +706,9 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                     return true;
                 }
 
-                // Handle Backspace specially - go up directory at boundary
-                if matches!((key.code, key.modifiers), (KeyCode::Backspace, KeyModifiers::NONE)) {
-                    // Check if we're at a directory boundary (cursor after a /)
-                    let chars: Vec<char> = input.chars().collect();
-                    if *cursor_pos > 0 && chars.get(*cursor_pos - 1) == Some(&'/') {
-                        // Go up one directory level
-                        // Remove trailing / and find previous /
-                        let path_without_trailing = &input[..input.len() - 1];
-                        if let Some(last_sep) = path_without_trailing.rfind('/') {
-                            *input = format!("{}/", &path_without_trailing[..last_sep]);
-                            *cursor_pos = input.chars().count();
-                            *completions = crate::editor::Editor::get_path_completions(input);
-                            *selected_completion = if completions.is_empty() { None } else { Some(0) };
-                        } else if input.starts_with('~') {
-                            // At home directory, can't go higher
-                            *input = "~/".to_string();
-                            *cursor_pos = 2;
-                            *completions = crate::editor::Editor::get_path_completions(input);
-                            *selected_completion = if completions.is_empty() { None } else { Some(0) };
-                        }
-                        return true;
-                    }
-                    // Otherwise, normal backspace - handled by shared handler below
-                }
+                // Handle Backspace - just delete the character before cursor (like Emacs)
+                // Completions will be regenerated by the shared handler below
+                // No special directory boundary handling needed - Emacs doesn't do it either
 
                 // Handle ESC/C-g for cancel
                 if matches!((key.code, key.modifiers), (KeyCode::Esc, _) | (KeyCode::Char('g'), KeyModifiers::CONTROL)) {
@@ -921,7 +850,6 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
             crate::editor::FloatingMode::Confirm {
                 steps,
                 current_index,
-                text_input,
                 ..
             } => {
                 // Check what type of response we're expecting
@@ -953,18 +881,6 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                                 } else {
                                     None
                                 }
-                            }
-                            _ => None,
-                        }
-                    }
-                    Some(crate::editor::ResponseType::TextInput { .. }) => {
-                        let mut cursor = text_input.chars().count();
-                        match handle_string_edit_key(&key, text_input, &mut cursor) {
-                            MinibufferKeyResult::Cancel => Some(ConfirmAction::Cancel),
-                            MinibufferKeyResult::Execute => {
-                                let input = text_input.clone();
-                                *text_input = String::new();
-                                Some(ConfirmAction::Respond(input))
                             }
                             _ => None,
                         }
@@ -1059,24 +975,6 @@ fn apply_confirm_result(
                 }
             }
         }
-        ResponseResult::Back => {
-            if current_index > 0 {
-                if let Some(ref mut fw) = editor.floating_window {
-                    if let crate::editor::FloatingMode::Confirm { current_index: ref mut ci, .. } = fw.mode {
-                        *ci = current_index - 1;
-                    }
-                }
-            }
-        }
-        ResponseResult::GoTo(idx) => {
-            if idx < total_steps {
-                if let Some(ref mut fw) = editor.floating_window {
-                    if let crate::editor::FloatingMode::Confirm { current_index: ref mut ci, .. } = fw.mode {
-                        *ci = idx;
-                    }
-                }
-            }
-        }
         ResponseResult::Stay => {
             // Do nothing, stay on current step
         }
@@ -1112,7 +1010,7 @@ fn should_quit(editor: &mut Editor, key: &KeyEvent) -> bool {
 
     match (key.code, key.modifiers) {
         (KeyCode::Esc, _) => {
-            if editor.mark_active {
+            if editor.mark.is_active() {
                 editor.cancel_mark();
                 false
             } else if editor.modified {
@@ -1124,7 +1022,7 @@ fn should_quit(editor: &mut Editor, key: &KeyEvent) -> bool {
             }
         }
         (KeyCode::Char('g'), KeyModifiers::CONTROL) => {
-            if editor.mark_active {
+            if editor.mark.is_active() {
                 editor.cancel_mark();
                 false
             } else if editor.modified {
@@ -1169,7 +1067,7 @@ fn execute_command(editor: &mut Editor, command_name: &str) -> bool {
 
         // System commands
         "force-quit" => {
-            let _ = ratatui::restore();
+            ratatui::restore();
             std::process::exit(0);
         }
         "operate" => {
@@ -1196,9 +1094,10 @@ fn execute_command(editor: &mut Editor, command_name: &str) -> bool {
         }
         "next-line" => {
             if editor.is_at_last_line() {
+                editor.save_undo_state();
                 editor.textarea.move_cursor(CursorMove::End);
                 editor.textarea.insert_newline();
-                editor.reset_kill_sequence();
+                // Text input resets selection
                 editor.mark_modified();
             } else {
                 editor.move_cursor(CursorMove::Down);
@@ -1228,17 +1127,20 @@ fn execute_command(editor: &mut Editor, command_name: &str) -> bool {
 
         // Edit commands
         "kill-line" => {
-            editor.kill_to_end_of_line();
+            editor.save_undo_state();
+            editor.cut_to_end_of_line();
             editor.mark_modified();
             true
         }
         "kill-line-backward" => {
-            editor.kill_to_beginning_of_line();
+            editor.save_undo_state();
+            editor.cut_to_beginning_of_line();
             editor.mark_modified();
             true
         }
         "yank" => {
-            editor.yank();
+            editor.save_undo_state();
+            editor.paste();
             editor.mark_modified();
             true
         }
@@ -1249,12 +1151,21 @@ fn execute_command(editor: &mut Editor, command_name: &str) -> bool {
             true
         }
         "kill-region" => {
-            editor.kill_region();
+            editor.save_undo_state();
+            editor.cut_region();
             editor.mark_modified();
             true
         }
         "copy-region" => {
             editor.copy_region();
+            true
+        }
+        "undo" => {
+            editor.undo();
+            true
+        }
+        "redo" => {
+            editor.redo();
             true
         }
 

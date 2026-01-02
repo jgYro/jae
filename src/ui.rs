@@ -42,7 +42,6 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
                     }
                 },
                 FloatingMode::Settings { .. } => "Settings - ↑↓:nav Space:toggle C-h/C-l:adjust ESC:close".to_string(),
-                FloatingMode::TextEdit => "Floating".to_string(),
                 FloatingMode::Minibuffer { .. } => "".to_string(),  // Minibuffer renders its own prompt
                 FloatingMode::Confirm { .. } => "".to_string(),  // Confirm renders its own prompt
                 FloatingMode::CommandPalette { .. } => "".to_string(),  // CommandPalette renders its own prompt
@@ -131,14 +130,7 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
 
                     // Render preview if available
                     if let Some(preview_text) = preview {
-                        if has_preview && has_metadata {
-                            let preview_widget = Paragraph::new(preview_text.clone())
-                                .block(Block::default()
-                                    .borders(Borders::TOP)
-                                    .title("Preview")
-                                    .border_style(Style::default().fg(Color::DarkGray)));
-                            frame.render_widget(preview_widget, chunks[1]);
-                        } else if has_preview {
+                        if has_preview {
                             let preview_widget = Paragraph::new(preview_text.clone())
                                 .block(Block::default()
                                     .borders(Borders::TOP)
@@ -168,10 +160,11 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
                         .enumerate()
                         .map(|(i, item)| {
                             let value_str = match &item.value {
-                                SettingValue::Bool(b) => if *b { "[✓]" } else { "[ ]" },
-                                SettingValue::Number(n) => &format!("<{}>", n),
+                                SettingValue::Bool(b) => if *b { "[✓]".to_string() } else { "[ ]".to_string() },
+                                SettingValue::Number(n) => format!("<{}>", n),
                                 SettingValue::Choice { current, options } => {
-                                    &format!("[{}]", options.get(*current).unwrap_or(&String::new()))
+                                    let opt = options.get(*current).map(|s| s.as_str()).unwrap_or("?");
+                                    format!("[{}]", opt)
                                 }
                             };
 
@@ -204,10 +197,6 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
                     let list = List::new(display_items);
                     frame.render_widget(list, inner_area);
                 }
-                FloatingMode::TextEdit => {
-                    frame.render_widget(&fw.textarea, inner_area);
-                }
-
                 FloatingMode::Minibuffer {
                     prompt,
                     input,
@@ -257,7 +246,7 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
                         if after_slash_start < chars.len() {
                             // Handle cursor position within the filename portion
                             let relative_cursor = cursor_pos.saturating_sub(after_slash_start);
-                            let filename_chars: Vec<char> = chars[after_slash_start..].iter().cloned().collect();
+                            let filename_chars: Vec<char> = chars[after_slash_start..].to_vec();
 
                             if *cursor_pos >= after_slash_start && *cursor_pos <= chars.len() {
                                 // Cursor is in the filename portion
@@ -328,7 +317,6 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
                 FloatingMode::Confirm {
                     steps,
                     current_index,
-                    text_input,
                     ..
                 } => {
                     // For confirm dialog, render at the bottom of the screen
@@ -376,19 +364,6 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
                                 spans.push(Span::raw(")"));
                                 spans.push(Span::styled(step_indicator, Style::default().fg(Color::DarkGray)));
                                 Line::from(spans)
-                            }
-                            ResponseType::TextInput { placeholder } => {
-                                Line::from(vec![
-                                    Span::styled(&step.prompt, Style::default().fg(Color::Yellow)),
-                                    Span::raw(" "),
-                                    if text_input.is_empty() {
-                                        Span::styled(placeholder, Style::default().fg(Color::DarkGray))
-                                    } else {
-                                        Span::raw(text_input.clone())
-                                    },
-                                    Span::styled("█", Style::default().fg(Color::White)),
-                                    Span::styled(step_indicator, Style::default().fg(Color::DarkGray)),
-                                ])
                             }
                         };
 
@@ -598,7 +573,7 @@ fn render_status_bar(frame: &mut Frame, editor: &Editor, area: Rect) {
     ));
 
     // Mark indicator
-    if editor.mark_active {
+    if editor.mark.is_active() {
         status_spans.push(Span::styled(
             " MARK",
             Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
