@@ -1544,6 +1544,35 @@ impl Editor {
         self.focus_floating = true;
     }
 
+    /// Open minibuffer for directory browsing starting at specified path
+    pub fn open_directory_prompt(&mut self, dir: &std::path::Path) {
+        let dir_path = if dir.to_string_lossy().ends_with('/') {
+            dir.to_string_lossy().to_string()
+        } else {
+            format!("{}/", dir.display())
+        };
+
+        let completions = Self::get_path_completions(&dir_path);
+
+        self.floating_window = Some(FloatingWindow {
+            textarea: TextArea::default(),
+            visible: true,
+            x: 0,
+            y: 0,  // Will be positioned at bottom by UI
+            width: 80,
+            height: 1,
+            mode: FloatingMode::Minibuffer {
+                prompt: "Find file: ".to_string(),
+                input: dir_path.clone(),
+                cursor_pos: dir_path.len(),
+                completions,
+                selected_completion: None,
+                callback: MinibufferCallback::OpenFile,
+            },
+        });
+        self.focus_floating = true;
+    }
+
     /// Open file from path, load into textarea
     pub fn open_file(&mut self, path: &std::path::Path) -> io::Result<()> {
         let mut file = fs::File::open(path)?;

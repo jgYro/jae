@@ -172,6 +172,8 @@ fn handle_string_edit_key(
 }
 
 pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
+    log::debug!("Key input: {:?} modifiers: {:?}", key.code, key.modifiers);
+
     // C-x C-q: Ultimate force quit - bypasses everything, exits immediately
     // This is the "kill switch" that always works regardless of editor state
     if editor.last_key == Some((KeyCode::Char('x'), KeyModifiers::CONTROL)) {
@@ -196,8 +198,11 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
         return true;
     }
 
-    // If floating window is focused, handle input specially
-    if editor.focus_floating && editor.floating_window.is_some() {
+    // If floating window exists, handle input specially
+    // (always route to floating handler, don't require focus_floating to be true)
+    if editor.floating_window.is_some() {
+        // Ensure focus is on the floating window
+        editor.focus_floating = true;
         let result = handle_floating_input(editor, key);
         // Check if pending_quit was set during dialog processing
         if editor.pending_quit {
@@ -640,6 +645,8 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                 selected_completion,
                 ..
             } => {
+                log::debug!("Minibuffer key: {:?}", key.code);
+
                 // Helper: check if path ends with / (is a directory)
                 let is_directory = |path: &str| path.ends_with('/');
 
@@ -1097,27 +1104,10 @@ fn should_quit(editor: &mut Editor, key: &KeyEvent) -> bool {
     // Note: C-ESC force quit is handled at the start of handle_input
     // before this function is even called
 
-    // Handle floating windows
-    if let Some(ref fw) = editor.floating_window {
-        let is_confirm = matches!(fw.mode, crate::editor::FloatingMode::Confirm { .. });
-
-        match (key.code, key.modifiers) {
-            (KeyCode::Esc, _) | (KeyCode::Char('g'), KeyModifiers::CONTROL) => {
-                if is_confirm {
-                    // Let the Confirm dialog handle ESC/C-g as cancel
-                    return false;
-                } else {
-                    // Close other floating windows with ESC/C-g
-                    editor.floating_window = None;
-                    editor.focus_floating = false;
-                    return false;
-                }
-            }
-            _ => {
-                // For other keys, don't quit - let handle_floating_input process them
-                return false;
-            }
-        }
+    // Handle floating windows - let handle_floating_input process all keys
+    // (including ESC/C-g which will close the window there)
+    if editor.floating_window.is_some() {
+        return false;
     }
 
     match (key.code, key.modifiers) {
@@ -1151,6 +1141,7 @@ fn should_quit(editor: &mut Editor, key: &KeyEvent) -> bool {
 
 /// Execute a command by name
 fn execute_command(editor: &mut Editor, command_name: &str) -> bool {
+    log::info!("Command: {}", command_name);
     match command_name {
         // File commands
         "open-file" => {
