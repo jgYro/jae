@@ -25,6 +25,8 @@ Kind of bored of emacs, vim and helix and general the paradigms of modal editing
 - [ ] Multiple cursors
 - [ ] Content specific rendering (like a spreadsheet viewer for csv or markdown parsing)
 - [ ] Mind map / wiki / note system
+- [ ] jq to code interface
+- [ ] curl to code interface (curlconvert etc)
 
 ## Tips & Tricks
 - Use "j" as alias to the binary
