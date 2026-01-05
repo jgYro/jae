@@ -92,4 +92,50 @@ impl Editor {
         let lines = self.textarea.lines();
         row == lines.len() - 1 || lines.is_empty()
     }
+
+    // ==================== Word Delete Operations ====================
+    //
+    // These follow the BufferEdit pattern - see buffer_ops.rs for details.
+
+    /// Delete word forward (M-d)
+    ///
+    /// Returns true if text was deleted, false if at end of document.
+    /// Handles undo state and modification tracking internally.
+    pub fn delete_word_forward(&mut self) -> bool {
+        let (row, col) = self.textarea.cursor();
+        let lines = self.textarea.lines();
+
+        // Check if there's anything to delete
+        let at_end = row >= lines.len()
+            || (row == lines.len() - 1 && col >= lines[row].chars().count());
+
+        if at_end {
+            return false;
+        }
+
+        self.save_undo_state();
+        self.textarea.delete_next_word();
+        self.mark_modified();
+        true
+    }
+
+    /// Delete word backward (M-Backspace)
+    ///
+    /// Returns true if text was deleted, false if at start of document.
+    /// Handles undo state and modification tracking internally.
+    pub fn delete_word_backward(&mut self) -> bool {
+        let (row, col) = self.textarea.cursor();
+
+        // Check if there's anything to delete
+        let at_start = row == 0 && col == 0;
+
+        if at_start {
+            return false;
+        }
+
+        self.save_undo_state();
+        self.textarea.delete_word();
+        self.mark_modified();
+        true
+    }
 }

@@ -201,17 +201,37 @@ impl Editor {
     }
 
     // ==================== Clipboard Operations ====================
+    //
+    // All buffer-modifying operations follow the BufferEdit pattern:
+    // 1. Check if operation will actually modify anything
+    // 2. If not, return false immediately (no side effects)
+    // 3. If yes, save undo state BEFORE modifying
+    // 4. Perform the modification
+    // 5. Mark buffer as modified
+    // 6. Return true
+    //
+    // See buffer_ops.rs for full documentation.
 
     /// Cut selected text to system clipboard (C-w)
-    pub fn cut_region(&mut self) {
+    ///
+    /// Returns true if text was actually cut, false if no selection.
+    /// Handles undo state and modification tracking internally.
+    pub fn cut_region(&mut self) -> bool {
         if let Some(text) = self.get_selected_text() {
+            self.save_undo_state();
             self.clipboard.copy(&text);
             self.textarea.cut();
             self.mark = MarkState::None;
+            self.mark_modified();
+            true
+        } else {
+            false
         }
     }
 
     /// Copy selected text to system clipboard (M-w)
+    ///
+    /// Does not modify buffer, so no undo state or modification tracking needed.
     pub fn copy_region(&mut self) {
         if let Some(text) = self.get_selected_text() {
             self.clipboard.copy(&text);
@@ -220,21 +240,32 @@ impl Editor {
     }
 
     /// Paste from system clipboard (C-y)
-    pub fn paste(&mut self) {
+    ///
+    /// Returns true if text was actually pasted, false if clipboard empty.
+    /// Handles undo state and modification tracking internally.
+    pub fn paste(&mut self) -> bool {
         if let Some(text) = self.clipboard.paste() {
+            self.save_undo_state();
             self.textarea.insert_str(&text);
+            self.mark_modified();
+            true
+        } else {
+            false
         }
     }
 
     /// Cut from cursor to end of line to clipboard (C-k)
-    pub fn cut_to_end_of_line(&mut self) {
+    ///
+    /// Returns true if text was actually cut, false if nothing to cut.
+    /// Handles undo state and modification tracking internally.
+    pub fn cut_to_end_of_line(&mut self) -> bool {
         let (row, col) = self.textarea.cursor();
 
         let (cut_text, should_move_to_end) = {
             let lines = self.textarea.lines();
 
             if row >= lines.len() {
-                return;
+                return false;
             }
 
             let line = &lines[row];
@@ -244,11 +275,12 @@ impl Editor {
             } else if row + 1 < lines.len() {
                 ("\n".to_string(), false)
             } else {
-                return;
+                return false;
             }
         };
 
         if !cut_text.is_empty() {
+            self.save_undo_state();
             self.clipboard.copy(&cut_text);
 
             self.textarea.start_selection();
@@ -261,18 +293,25 @@ impl Editor {
 
             self.textarea.cut();
             self.mark = MarkState::None;
+            self.mark_modified();
+            true
+        } else {
+            false
         }
     }
 
     /// Cut from beginning of line to cursor to clipboard (C-u)
-    pub fn cut_to_beginning_of_line(&mut self) {
+    ///
+    /// Returns true if text was actually cut, false if nothing to cut.
+    /// Handles undo state and modification tracking internally.
+    pub fn cut_to_beginning_of_line(&mut self) -> bool {
         let (row, col) = self.textarea.cursor();
 
         let cut_text = {
             let lines = self.textarea.lines();
 
             if row >= lines.len() || col == 0 {
-                return;
+                return false;
             }
 
             let line = &lines[row];
@@ -280,6 +319,7 @@ impl Editor {
         };
 
         if !cut_text.is_empty() {
+            self.save_undo_state();
             self.clipboard.copy(&cut_text);
 
             self.textarea.move_cursor(CursorMove::Head);
@@ -290,6 +330,10 @@ impl Editor {
 
             self.textarea.cut();
             self.mark = MarkState::None;
+            self.mark_modified();
+            true
+        } else {
+            false
         }
     }
 }

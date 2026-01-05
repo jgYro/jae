@@ -5,6 +5,7 @@
 
 // Core modules
 mod core;
+pub mod buffer_ops;
 pub mod dialogs;
 pub mod settings;
 pub mod types;

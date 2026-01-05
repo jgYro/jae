@@ -1,4 +1,5 @@
 use crate::commands::CtrlXPrefix;
+use crate::editor::buffer_ops::is_text_input_key;
 use crate::editor::Editor;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tui_textarea::{CursorMove, Input};
@@ -334,25 +335,21 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
         }
 
         // Kill and yank operations
+        // All these operations are self-contained: they handle undo state and
+        // modification tracking internally. See buffer_ops.rs for the pattern.
         (KeyCode::Char('w'), KeyModifiers::CONTROL) => {
-            editor.save_undo_state();
             editor.cut_region();
-            editor.mark_modified();
         }
         (KeyCode::Char('w'), KeyModifiers::ALT) => {
             editor.copy_region();
-            // Copy doesn't modify buffer
         }
         (KeyCode::Char('y'), KeyModifiers::CONTROL) => {
-            editor.save_undo_state();
             editor.paste();
-            editor.mark_modified();
         }
         (KeyCode::Char('k'), KeyModifiers::CONTROL) => {
-            editor.save_undo_state();
             editor.cut_to_end_of_line();
-            editor.mark_modified();
         }
+
         // Undo (C-z)
         (KeyCode::Char('z'), mods) if mods.contains(KeyModifiers::CONTROL) && !mods.contains(KeyModifiers::SHIFT) => {
             editor.undo();
@@ -363,36 +360,32 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
             editor.redo();
         }
 
-        // Word delete operations
+        // Word delete operations (self-contained)
         (KeyCode::Char('d'), mods) if mods.contains(KeyModifiers::ALT) => {
-            editor.save_undo_state();
-            editor.textarea.delete_next_word();
-            editor.mark_modified();
+            editor.delete_word_forward();
         }
         (KeyCode::Backspace, mods) if mods.contains(KeyModifiers::ALT) => {
-            editor.save_undo_state();
-            editor.textarea.delete_word();
-            editor.mark_modified();
+            editor.delete_word_backward();
         }
 
         // Default: pass through to textarea (without tui-textarea's default shortcuts)
         _ => {
-            // Save undo state before text-changing keys
-            if matches!(key.code,
-                KeyCode::Char(_) | KeyCode::Backspace | KeyCode::Delete | KeyCode::Enter | KeyCode::Tab
-            ) {
+            // Use the is_text_input_key helper to determine if this key actually
+            // modifies the buffer. Control/Alt+letter that aren't handled above
+            // are ignored (e.g., C-t does nothing, shouldn't mark modified).
+            // See buffer_ops.rs for documentation.
+            if is_text_input_key(key.code, key.modifiers) {
                 editor.save_undo_state();
-            }
-            let event = ratatui::crossterm::event::Event::Key(key);
-            let input: Input = event.into();
-            // Use input_without_shortcuts to prevent tui-textarea's default keybindings
-            // (like C-u for undo) from interfering with our custom handling
-            editor.textarea.input_without_shortcuts(input);
-            // Mark as modified for text-changing keys
-            if matches!(key.code,
-                KeyCode::Char(_) | KeyCode::Backspace | KeyCode::Delete | KeyCode::Enter | KeyCode::Tab
-            ) {
+                let event = ratatui::crossterm::event::Event::Key(key);
+                let input: Input = event.into();
+                editor.textarea.input_without_shortcuts(input);
                 editor.mark_modified();
+            } else {
+                // Non-text input key that we don't handle - just pass through
+                // but don't save undo or mark modified
+                let event = ratatui::crossterm::event::Event::Key(key);
+                let input: Input = event.into();
+                editor.textarea.input_without_shortcuts(input);
             }
         }
     }
@@ -1126,22 +1119,18 @@ fn execute_command(editor: &mut Editor, command_name: &str) -> bool {
         }
 
         // Edit commands
+        // All these operations are self-contained: they handle undo state and
+        // modification tracking internally. See buffer_ops.rs for the pattern.
         "kill-line" => {
-            editor.save_undo_state();
             editor.cut_to_end_of_line();
-            editor.mark_modified();
             true
         }
         "kill-line-backward" => {
-            editor.save_undo_state();
             editor.cut_to_beginning_of_line();
-            editor.mark_modified();
             true
         }
         "yank" => {
-            editor.save_undo_state();
             editor.paste();
-            editor.mark_modified();
             true
         }
 
@@ -1151,9 +1140,7 @@ fn execute_command(editor: &mut Editor, command_name: &str) -> bool {
             true
         }
         "kill-region" => {
-            editor.save_undo_state();
             editor.cut_region();
-            editor.mark_modified();
             true
         }
         "copy-region" => {
