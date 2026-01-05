@@ -3,6 +3,9 @@
 //! This module provides a simple linear undo/redo system that stores
 //! snapshots of the editor content and cursor position.
 
+use ratatui::style::{Color, Modifier, Style};
+use tui_textarea::{CursorMove, TextArea};
+
 /// A snapshot of the editor state at a point in time
 #[derive(Debug, Clone)]
 pub struct EditorSnapshot {
@@ -90,6 +93,88 @@ impl UndoManager {
 impl Default for UndoManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// ==================== Editor Undo/Redo Methods ====================
+
+use super::Editor;
+
+impl Editor {
+    /// Create a snapshot of the current editor state
+    fn create_snapshot(&self) -> EditorSnapshot {
+        EditorSnapshot {
+            lines: self.textarea.lines().iter().map(|s| s.to_string()).collect(),
+            cursor: self.textarea.cursor(),
+        }
+    }
+
+    /// Restore editor state from a snapshot
+    fn restore_snapshot(&mut self, snapshot: EditorSnapshot) {
+        // Recreate textarea with the snapshot's content
+        let mut new_textarea = if snapshot.lines.is_empty() {
+            TextArea::default()
+        } else {
+            TextArea::new(snapshot.lines)
+        };
+
+        // Copy over style settings
+        new_textarea.set_cursor_style(
+            Style::default()
+                .bg(self.settings.cursor_color)
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        );
+        new_textarea.set_cursor_line_style(Style::default());
+        new_textarea.set_selection_style(
+            Style::default()
+                .bg(self.settings.selection_color)
+                .fg(Color::White),
+        );
+
+        self.textarea = new_textarea;
+
+        // Restore cursor position
+        let (target_row, target_col) = snapshot.cursor;
+        // Move to beginning first
+        self.textarea.move_cursor(CursorMove::Top);
+        self.textarea.move_cursor(CursorMove::Head);
+        // Move to target row
+        for _ in 0..target_row {
+            self.textarea.move_cursor(CursorMove::Down);
+        }
+        // Move to target column
+        for _ in 0..target_col {
+            self.textarea.move_cursor(CursorMove::Forward);
+        }
+    }
+
+    /// Save current state to undo history (call before making changes)
+    pub fn save_undo_state(&mut self) {
+        let snapshot = self.create_snapshot();
+        self.undo_manager.save_state(snapshot);
+    }
+
+    /// Undo the last edit
+    pub fn undo(&mut self) -> bool {
+        let current = self.create_snapshot();
+        if let Some(previous) = self.undo_manager.undo(current) {
+            self.restore_snapshot(previous);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Redo the last undo
+    pub fn redo(&mut self) -> bool {
+        let current = self.create_snapshot();
+        if let Some(next) = self.undo_manager.redo(current) {
+            self.restore_snapshot(next);
+            true
+        } else {
+            false
+        }
     }
 }
 
