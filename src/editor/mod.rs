@@ -8,6 +8,8 @@ mod core;
 pub mod buffer_ops;
 pub mod dialogs;
 pub mod settings;
+pub mod syntax;
+pub mod text_widget;
 pub mod types;
 pub mod undo;
 

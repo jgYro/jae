@@ -265,6 +265,12 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
 
     // Handle Emacs keybindings
     match (key.code, key.modifiers) {
+        // C-g and ESC are handled by should_quit above - don't pass to default
+        // This prevents them from being sent to textarea.input_without_shortcuts
+        (KeyCode::Char('g'), KeyModifiers::CONTROL) | (KeyCode::Esc, _) => {
+            // Already handled by should_quit, just return
+        }
+
         // Basic movement - these don't reset kill sequence
         (KeyCode::Char('f'), KeyModifiers::CONTROL) => {
             editor.move_cursor(CursorMove::Forward);
@@ -325,8 +331,11 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
         // Selection and mark - doesn't reset kill sequence
         (KeyCode::Char(' '), KeyModifiers::CONTROL) => {
             editor.set_mark();
-            // Store this key for detecting C-SPC C-SPC
-            editor.last_key = Some((KeyCode::Char(' '), KeyModifiers::CONTROL));
+            // Store this key for detecting C-SPC C-SPC, but only if we didn't
+            // just toggle off a selection (set_mark clears last_key in that case)
+            if editor.last_key.is_some() || editor.mark.is_active() {
+                editor.last_key = Some((KeyCode::Char(' '), KeyModifiers::CONTROL));
+            }
         }
         // C-x prefix for commands
         (KeyCode::Char('x'), KeyModifiers::CONTROL) => {

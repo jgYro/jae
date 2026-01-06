@@ -1,137 +1,15 @@
-22:04:18 [INFO] JAE starting with logging enabled
-22:04:19 [DEBUG] (1) jae::keybindings: Key input: Char('h') modifiers: KeyModifiers(0x0)
-22:04:19 [DEBUG] (1) jae::keybindings: Default case: key=Char('h'), modifiers=KeyModifiers(0x0)
-22:04:19 [DEBUG] (1) jae::editor: save_undo_state: lines=[""], cursor=(0, 0)
-22:04:19 [DEBUG] (1) jae::keybindings: Key input: Char('e') modifiers: KeyModifiers(0x0)
-22:04:19 [DEBUG] (1) jae::keybindings: Default case: key=Char('e'), modifiers=KeyModifiers(0x0)
-22:04:19 [DEBUG] (1) jae::editor: save_undo_state: lines=["h"], cursor=(0, 1)
-22:04:19 [DEBUG] (1) jae::keybindings: Key input: Char('l') modifiers: KeyModifiers(0x0)
-22:04:19 [DEBUG] (1) jae::keybindings: Default case: key=Char('l'), modifiers=KeyModifiers(0x0)
-22:04:19 [DEBUG] (1) jae::editor: save_undo_state: lines=["he"], cursor=(0, 2)
-22:04:19 [DEBUG] (1) jae::keybindings: Key input: Char('l') modifiers: KeyModifiers(0x0)
-22:04:19 [DEBUG] (1) jae::keybindings: Default case: key=Char('l'), modifiers=KeyModifiers(0x0)
-22:04:19 [DEBUG] (1) jae::editor: save_undo_state: lines=["hel"], cursor=(0, 3)
-22:04:19 [DEBUG] (1) jae::keybindings: Key input: Char('o') modifiers: KeyModifiers(0x0)
-22:04:19 [DEBUG] (1) jae::keybindings: Default case: key=Char('o'), modifiers=KeyModifiers(0x0)
-22:04:19 [DEBUG] (1) jae::editor: save_undo_state: lines=["hell"], cursor=(0, 4)
-22:04:19 [DEBUG] (1) jae::keybindings: Key input: Char(' ') modifiers: KeyModifiers(0x0)
-22:04:19 [DEBUG] (1) jae::keybindings: Default case: key=Char(' '), modifiers=KeyModifiers(0x0)
-22:04:19 [DEBUG] (1) jae::editor: save_undo_state: lines=["hello"], cursor=(0, 5)
-22:04:19 [DEBUG] (1) jae::keybindings: Key input: Char('w') modifiers: KeyModifiers(0x0)
-22:04:19 [DEBUG] (1) jae::keybindings: Default case: key=Char('w'), modifiers=KeyModifiers(0x0)
-22:04:19 [DEBUG] (1) jae::editor: save_undo_state: lines=["hello "], cursor=(0, 6)
-22:04:20 [DEBUG] (1) jae::keybindings: Key input: Char('o') modifiers: KeyModifiers(0x0)
-22:04:20 [DEBUG] (1) jae::keybindings: Default case: key=Char('o'), modifiers=KeyModifiers(0x0)
-22:04:20 [DEBUG] (1) jae::editor: save_undo_state: lines=["hello w"], cursor=(0, 7)
-22:04:20 [DEBUG] (1) jae::keybindings: Key input: Char('r') modifiers: KeyModifiers(0x0)
-22:04:20 [DEBUG] (1) jae::keybindings: Default case: key=Char('r'), modifiers=KeyModifiers(0x0)
-22:04:20 [DEBUG] (1) jae::editor: save_undo_state: lines=["hello wo"], cursor=(0, 8)
-22:04:20 [DEBUG] (1) jae::keybindings: Key input: Char('l') modifiers: KeyModifiers(0x0)
-22:04:20 [DEBUG] (1) jae::keybindings: Default case: key=Char('l'), modifiers=KeyModifiers(0x0)
-22:04:20 [DEBUG] (1) jae::editor: save_undo_state: lines=["hello wor"], cursor=(0, 9)
-22:04:20 [DEBUG] (1) jae::keybindings: Key input: Char('d') modifiers: KeyModifiers(0x0)
-22:04:20 [DEBUG] (1) jae::keybindings: Default case: key=Char('d'), modifiers=KeyModifiers(0x0)
-22:04:20 [DEBUG] (1) jae::editor: save_undo_state: lines=["hello worl"], cursor=(0, 10)
-22:04:21 [DEBUG] (1) jae::keybindings: Key input: Char('z') modifiers: KeyModifiers(CONTROL)
-22:04:21 [INFO] C-z pressed: calling undo
-22:04:21 [DEBUG] (1) jae::editor: undo: current lines=["hello world"]
-22:04:21 [DEBUG] (1) jae::editor: undo: restoring to lines=["hello worl"]
-22:04:22 [DEBUG] (1) jae::keybindings: Key input: Char('z') modifiers: KeyModifiers(CONTROL)
-22:04:22 [INFO] C-z pressed: calling undo
-22:04:22 [DEBUG] (1) jae::editor: undo: current lines=["hello worl"]
-22:04:22 [DEBUG] (1) jae::editor: undo: restoring to lines=["hello wor"]
-22:04:22 [DEBUG] (1) jae::keybindings: Key input: Char('z') modifiers: KeyModifiers(CONTROL)
-22:04:22 [INFO] C-z pressed: calling undo
-22:04:22 [DEBUG] (1) jae::editor: undo: current lines=["hello wor"]
-22:04:22 [DEBUG] (1) jae::editor: undo: restoring to lines=["hello wo"]
-22:04:22 [DEBUG] (1) jae::keybindings: Key input: Char('z') modifiers: KeyModifiers(ALT)
-22:04:22 [INFO] M-z pressed: calling redo
-22:04:22 [DEBUG] (1) jae::editor: redo: current lines=["hello wo"]
-22:04:22 [DEBUG] (1) jae::editor: redo: restoring to lines=["hello wor"]
-22:04:23 [DEBUG] (1) jae::keybindings: Key input: Char('z') modifiers: KeyModifiers(ALT)
-22:04:23 [INFO] M-z pressed: calling redo
-22:04:23 [DEBUG] (1) jae::editor: redo: current lines=["hello wor"]
-22:04:23 [DEBUG] (1) jae::editor: redo: restoring to lines=["hello worl"]
-22:04:23 [DEBUG] (1) jae::keybindings: Key input: Char('z') modifiers: KeyModifiers(ALT)
-22:04:23 [INFO] M-z pressed: calling redo
-22:04:23 [DEBUG] (1) jae::editor: redo: current lines=["hello worl"]
-22:04:23 [DEBUG] (1) jae::editor: redo: restoring to lines=["hello world"]
-22:04:23 [DEBUG] (1) jae::keybindings: Key input: Char('z') modifiers: KeyModifiers(ALT)
-22:04:23 [INFO] M-z pressed: calling redo
-22:04:23 [DEBUG] (1) jae::editor: redo: current lines=["hello world"]
-22:04:23 [DEBUG] (1) jae::editor: redo: nothing to redo
-22:04:24 [DEBUG] (1) jae::keybindings: Key input: Backspace modifiers: KeyModifiers(ALT)
-22:04:24 [DEBUG] (1) jae::editor: save_undo_state: lines=["hello world"], cursor=(0, 11)
-22:04:24 [DEBUG] (1) jae::keybindings: Key input: Char('z') modifiers: KeyModifiers(ALT)
-22:04:24 [INFO] M-z pressed: calling redo
-22:04:24 [DEBUG] (1) jae::editor: redo: current lines=["hello "]
-22:04:24 [DEBUG] (1) jae::editor: redo: nothing to redo
-22:04:25 [DEBUG] (1) jae::keybindings: Key input: Char('z') modifiers: KeyModifiers(CONTROL)
-22:04:25 [INFO] C-z pressed: calling undo
-22:04:25 [DEBUG] (1) jae::editor: undo: current lines=["hello "]
-22:04:25 [DEBUG] (1) jae::editor: undo: restoring to lines=["hello world"]
-22:04:27 [DEBUG] (1) jae::keybindings: Key input: Backspace modifiers: KeyModifiers(ALT)
-22:04:27 [DEBUG] (1) jae::editor: save_undo_state: lines=["hello world"], cursor=(0, 11)
-22:04:27 [DEBUG] (1) jae::keybindings: Key input: Char('z') modifiers: KeyModifiers(CONTROL)
-22:04:27 [INFO] C-z pressed: calling undo
-22:04:27 [DEBUG] (1) jae::editor: undo: current lines=["hello "]
-22:04:27 [DEBUG] (1) jae::editor: undo: restoring to lines=["hello world"]
-22:04:29 [DEBUG] (1) jae::keybindings: Key input: Char('z') modifiers: KeyModifiers(CONTROL)
-22:04:29 [INFO] C-z pressed: calling undo
-22:04:29 [DEBUG] (1) jae::editor: undo: current lines=["hello world"]
-22:04:29 [DEBUG] (1) jae::editor: undo: restoring to lines=["hello worl"]
-22:04:30 [DEBUG] (1) jae::keybindings: Key input: Char('z') modifiers: KeyModifiers(CONTROL)
-22:04:30 [INFO] C-z pressed: calling undo
-22:04:30 [DEBUG] (1) jae::editor: undo: current lines=["hello worl"]
-22:04:30 [DEBUG] (1) jae::editor: undo: restoring to lines=["hello wor"]
-22:04:30 [DEBUG] (1) jae::keybindings: Key input: Char('z') modifiers: KeyModifiers(CONTROL)
-22:04:30 [INFO] C-z pressed: calling undo
-22:04:30 [DEBUG] (1) jae::editor: undo: current lines=["hello wor"]
-22:04:30 [DEBUG] (1) jae::editor: undo: restoring to lines=["hello wo"]
-22:04:30 [DEBUG] (1) jae::keybindings: Key input: Char('z') modifiers: KeyModifiers(ALT)
-22:04:30 [INFO] M-z pressed: calling redo
-22:04:30 [DEBUG] (1) jae::editor: redo: current lines=["hello wo"]
-22:04:30 [DEBUG] (1) jae::editor: redo: restoring to lines=["hello wor"]
-22:04:31 [DEBUG] (1) jae::keybindings: Key input: Char('z') modifiers: KeyModifiers(ALT)
-22:04:31 [INFO] M-z pressed: calling redo
-22:04:31 [DEBUG] (1) jae::editor: redo: current lines=["hello wor"]
-22:04:31 [DEBUG] (1) jae::editor: redo: restoring to lines=["hello worl"]
-22:04:31 [DEBUG] (1) jae::keybindings: Key input: Char('z') modifiers: KeyModifiers(ALT)
-22:04:31 [INFO] M-z pressed: calling redo
-22:04:31 [DEBUG] (1) jae::editor: redo: current lines=["hello worl"]
-22:04:31 [DEBUG] (1) jae::editor: redo: restoring to lines=["hello world"]
-22:04:31 [DEBUG] (1) jae::keybindings: Key input: Char('z') modifiers: KeyModifiers(ALT)
-22:04:31 [INFO] M-z pressed: calling redo
-22:04:31 [DEBUG] (1) jae::editor: redo: current lines=["hello world"]
-22:04:31 [DEBUG] (1) jae::editor: redo: restoring to lines=["hello "]
-22:04:31 [DEBUG] (1) jae::keybindings: Key input: Char('z') modifiers: KeyModifiers(ALT)
-22:04:31 [INFO] M-z pressed: calling redo
-22:04:31 [DEBUG] (1) jae::editor: redo: current lines=["hello "]
-22:04:31 [DEBUG] (1) jae::editor: redo: nothing to redo
-22:04:41 [DEBUG] (1) jae::keybindings: Key input: Char('b') modifiers: KeyModifiers(ALT)
-22:04:42 [DEBUG] (1) jae::keybindings: Key input: Char(' ') modifiers: KeyModifiers(CONTROL)
-22:04:42 [DEBUG] (1) jae::keybindings: Key input: Char('e') modifiers: KeyModifiers(CONTROL)
-22:04:43 [DEBUG] (1) jae::keybindings: Key input: Char('q') modifiers: KeyModifiers(ALT)
-22:04:44 [DEBUG] (1) jae::keybindings: Key input: Enter modifiers: KeyModifiers(0x0)
-22:04:45 [DEBUG] (1) jae::keybindings: Key input: Enter modifiers: KeyModifiers(0x0)
-22:04:45 [DEBUG] (1) jae::editor: save_undo_state: lines=["hello "], cursor=(0, 6)
-22:04:47 [DEBUG] (1) jae::keybindings: Key input: Char('z') modifiers: KeyModifiers(CONTROL)
-22:04:47 [INFO] C-z pressed: calling undo
-22:04:47 [DEBUG] (1) jae::editor: undo: current lines=["HELLO "]
-22:04:47 [DEBUG] (1) jae::editor: undo: restoring to lines=["hello "]
-22:04:48 [DEBUG] (1) jae::keybindings: Key input: Char('z') modifiers: KeyModifiers(CONTROL)
-22:04:48 [INFO] C-z pressed: calling undo
-22:04:48 [DEBUG] (1) jae::editor: undo: current lines=["hello "]
-22:04:48 [DEBUG] (1) jae::editor: undo: restoring to lines=["hello world"]
-22:04:49 [DEBUG] (1) jae::keybindings: Key input: Char('z') modifiers: KeyModifiers(ALT)
-22:04:49 [INFO] M-z pressed: calling redo
-22:04:49 [DEBUG] (1) jae::editor: redo: current lines=["hello world"]
-22:04:49 [DEBUG] (1) jae::editor: redo: restoring to lines=["hello "]
-22:04:49 [DEBUG] (1) jae::keybindings: Key input: Char('z') modifiers: KeyModifiers(ALT)
-22:04:49 [INFO] M-z pressed: calling redo
-22:04:49 [DEBUG] (1) jae::editor: redo: current lines=["hello "]
-22:04:49 [DEBUG] (1) jae::editor: redo: restoring to lines=["HELLO "]
-22:04:49 [DEBUG] (1) jae::keybindings: Key input: Char('z') modifiers: KeyModifiers(ALT)
-22:04:49 [INFO] M-z pressed: calling redo
-22:04:49 [DEBUG] (1) jae::editor: redo: current lines=["HELLO "]
-22:04:49 [DEBUG] (1) jae::editor: redo: nothing to redo
+15:07:44 [INFO] JAE starting with logging enabled
+15:07:44 [INFO] Opening file: src/main.rs
+15:07:45 [DEBUG] (1) jae::keybindings: Key input: Char(' ') modifiers: KeyModifiers(CONTROL)
+15:07:46 [DEBUG] (1) jae::keybindings: Key input: Char('e') modifiers: KeyModifiers(CONTROL)
+15:07:46 [DEBUG] (1) jae::keybindings: Key input: Char(' ') modifiers: KeyModifiers(CONTROL)
+15:07:47 [DEBUG] (1) jae::keybindings: Key input: Char(' ') modifiers: KeyModifiers(CONTROL)
+15:07:48 [DEBUG] (1) jae::keybindings: Key input: Char('a') modifiers: KeyModifiers(CONTROL)
+15:07:49 [DEBUG] (1) jae::keybindings: Key input: Char(' ') modifiers: KeyModifiers(CONTROL)
+15:07:50 [DEBUG] (1) jae::keybindings: Key input: Char(' ') modifiers: KeyModifiers(CONTROL)
+15:07:50 [DEBUG] (1) jae::keybindings: Key input: Char('e') modifiers: KeyModifiers(CONTROL)
+15:07:51 [DEBUG] (1) jae::keybindings: Key input: Char(' ') modifiers: KeyModifiers(CONTROL)
+15:07:51 [DEBUG] (1) jae::keybindings: Key input: Char(' ') modifiers: KeyModifiers(CONTROL)
+15:07:52 [DEBUG] (1) jae::keybindings: Key input: Char('a') modifiers: KeyModifiers(CONTROL)
+15:07:52 [DEBUG] (1) jae::keybindings: Key input: Char(' ') modifiers: KeyModifiers(CONTROL)
+15:07:53 [DEBUG] (1) jae::keybindings: Key input: Esc modifiers: KeyModifiers(0x0)

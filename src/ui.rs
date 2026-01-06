@@ -1,3 +1,4 @@
+use crate::editor::text_widget::EditorWidget;
 use crate::editor::{Editor, FloatingMode};
 use ratatui::{
     layout::{Constraint, Layout, Rect},
@@ -17,8 +18,8 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
     ])
     .split(frame.area());
 
-    // Text area
-    frame.render_widget(&editor.textarea, chunks[0]);
+    // Text area with syntax highlighting
+    frame.render_widget(EditorWidget::new(editor), chunks[0]);
 
     // Status bar with optional which-key line above
     render_status_bar(frame, editor, chunks[1]);

@@ -54,6 +54,8 @@ impl Editor {
                     // If already active, deactivate (toggle behavior)
                     self.textarea.cancel_selection();
                     self.mark = MarkState::Set { row, col };
+                    // Clear last_key so next C-SPC starts a fresh selection
+                    self.last_key = None;
                 }
             }
         }

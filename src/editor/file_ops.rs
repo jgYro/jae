@@ -1,5 +1,6 @@
 //! File operations for the editor.
 
+use super::syntax::{Language, Syntax, SyntaxHighlighter};
 use super::{
     CommandInfo, ConfirmationDialog, DeleteFileConfirmation, Editor, FloatingMode, FloatingWindow,
     MarkState, MinibufferCallback, QuitConfirmation,
@@ -166,6 +167,20 @@ impl Editor {
         self.mark = MarkState::None;
         self.undo_manager.clear();
 
+        // Detect language and initialize syntax
+        self.language = Language::from_path(path);
+        self.syntax = Syntax::new(self.language);
+        if let Some(ref mut syntax) = self.syntax {
+            syntax.parse(&contents);
+        }
+
+        // Initialize syntax highlighter and cache highlights
+        self.highlighter = match self.language {
+            Language::Rust => SyntaxHighlighter::new_rust(),
+            Language::PlainText => None,
+        };
+        self.update_highlights();
+
         Ok(())
     }
 
@@ -311,6 +326,8 @@ impl Editor {
     /// Mark buffer as modified (called when text changes)
     pub fn mark_modified(&mut self) {
         self.modified = true;
+        // Update syntax highlights when buffer changes
+        self.update_highlights();
     }
 
     /// Start the quit confirmation dialog (when buffer is modified)

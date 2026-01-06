@@ -1,5 +1,6 @@
 //! Core Editor struct and initialization.
 
+use super::syntax::{HighlightSpan, Language, Syntax, SyntaxHighlighter};
 use super::{MarkState, Settings, StatusBarState, UndoManager};
 use crate::clipboard::ClipboardManager;
 use ratatui::crossterm::event::{KeyCode, KeyModifiers};
@@ -23,6 +24,14 @@ pub struct Editor {
     pub modified: bool,
     pub pending_quit: bool,
     pub undo_manager: UndoManager,
+    /// Detected language for syntax operations
+    pub language: Language,
+    /// Tree-sitter syntax state (None for plain text)
+    pub syntax: Option<Syntax>,
+    /// Syntax highlighter (None for plain text)
+    pub highlighter: Option<SyntaxHighlighter>,
+    /// Cached highlight spans (updated on buffer change)
+    pub cached_highlights: Vec<HighlightSpan>,
 }
 
 impl Editor {
@@ -60,6 +69,10 @@ impl Editor {
             modified: false,
             pending_quit: false,
             undo_manager: UndoManager::new(),
+            language: Language::PlainText,
+            syntax: None,
+            highlighter: None,
+            cached_highlights: Vec::new(),
         }
     }
 
@@ -76,6 +89,16 @@ impl Editor {
                 .bg(self.settings.selection_color)
                 .fg(Color::White),
         );
+    }
+
+    /// Update cached syntax highlights for the current buffer.
+    pub fn update_highlights(&mut self) {
+        if let Some(ref mut highlighter) = self.highlighter {
+            let source = self.textarea.lines().join("\n");
+            self.cached_highlights = highlighter.highlight(&source);
+        } else {
+            self.cached_highlights.clear();
+        }
     }
 
     // ==================== String Utilities ====================
