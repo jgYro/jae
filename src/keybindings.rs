@@ -308,6 +308,19 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
             editor.move_cursor(CursorMove::End);
         }
 
+        // Page up/down
+        (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+            editor.page_up();
+        }
+        (KeyCode::Char('u'), KeyModifiers::ALT) => {
+            editor.page_down();
+        }
+
+        // Recenter (C-l) - cycles through center/top/bottom
+        (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
+            editor.recenter();
+        }
+
         // Word movement - these don't reset kill sequence
         (KeyCode::Char('f'), KeyModifiers::ALT) => {
             editor.move_word_forward();
@@ -1241,6 +1254,18 @@ fn execute_command(editor: &mut Editor, command_name: &str) -> bool {
         }
         "backward-word" => {
             editor.move_word_backward();
+            true
+        }
+        "page-up" => {
+            editor.page_up();
+            true
+        }
+        "page-down" => {
+            editor.page_down();
+            true
+        }
+        "recenter" => {
+            editor.recenter();
             true
         }
 

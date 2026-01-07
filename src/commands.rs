@@ -258,6 +258,24 @@ impl CommandRegistry {
             category: Category::Movement,
             keybinding: Some(Keybinding::Single(KeyCombo::alt('b'))),
         });
+        self.register(Command {
+            name: "page-up",
+            description: "Move cursor up one page",
+            category: Category::Movement,
+            keybinding: Some(Keybinding::Single(KeyCombo::ctrl('u'))),
+        });
+        self.register(Command {
+            name: "page-down",
+            description: "Move cursor down one page",
+            category: Category::Movement,
+            keybinding: Some(Keybinding::Single(KeyCombo::alt('u'))),
+        });
+        self.register(Command {
+            name: "recenter",
+            description: "Recenter view (cycle: center/top/bottom)",
+            category: Category::Movement,
+            keybinding: Some(Keybinding::Single(KeyCombo::ctrl('l'))),
+        });
 
         // File commands
         self.register(Command {

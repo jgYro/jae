@@ -19,8 +19,8 @@ mod menu;
 mod movement;
 mod selection;
 
-// Re-export the Editor struct
-pub use core::Editor;
+// Re-export the Editor struct and core types
+pub use core::{Editor, RecenterState};
 
 // Re-export dialog types
 pub use dialogs::{ConfirmationDialog, DeleteFileConfirmation, QuitConfirmation};

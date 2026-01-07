@@ -53,6 +53,11 @@ impl Widget for EditorWidget<'_> {
 }
 
 impl EditorWidget<'_> {
+    /// Get the scroll offset from the editor (managed by movement code)
+    fn get_scroll_offset(&self) -> usize {
+        self.editor.scroll_offset
+    }
+
     /// Render with horizontal scrolling (original behavior)
     fn render_with_h_scroll(
         &self,
@@ -64,12 +69,8 @@ impl EditorWidget<'_> {
         viewport_width: usize,
         viewport_height: usize,
     ) {
-        // Calculate vertical scroll offset based on cursor position
-        let scroll_offset = if cursor_row >= viewport_height {
-            cursor_row - viewport_height + 1
-        } else {
-            0
-        };
+        // Calculate vertical scroll offset based on cursor position and recenter state
+        let scroll_offset = self.get_scroll_offset();
 
         // Calculate horizontal scroll offset to keep cursor in view
         let h_scroll_offset = if cursor_col >= viewport_width {
@@ -334,12 +335,9 @@ impl EditorWidget<'_> {
             }
         }
 
-        // Calculate scroll offset to keep cursor in view
-        let scroll_offset = if cursor_visual_row >= viewport_height {
-            cursor_visual_row - viewport_height + 1
-        } else {
-            0
-        };
+        // For soft wrap, we use visual rows but the scroll_offset is managed elsewhere
+        // This is a simplification - soft wrap may need refinement
+        let scroll_offset = self.get_scroll_offset();
 
         // Track which document line we're processing for byte offset calculations
         let mut last_doc_line: Option<usize> = None;

@@ -8,7 +8,7 @@ use ratatui::{
     Frame,
 };
 
-pub fn draw(frame: &mut Frame, editor: &Editor) {
+pub fn draw(frame: &mut Frame, editor: &mut Editor) {
     // Status bar is always 3 lines: which-key line + status line + border
     let status_height = 3;
 
@@ -17,6 +17,9 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
         Constraint::Length(status_height),
     ])
     .split(frame.area());
+
+    // Update viewport height for page up/down calculations
+    editor.viewport_height = chunks[0].height;
 
     // Text area with syntax highlighting
     frame.render_widget(EditorWidget::new(editor), chunks[0]);

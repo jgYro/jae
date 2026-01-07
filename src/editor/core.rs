@@ -10,6 +10,20 @@ use tui_textarea::TextArea;
 
 use super::FloatingWindow;
 
+/// State for the C-l recenter cycling behavior
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RecenterState {
+    /// Normal scrolling - keep cursor in view without forcing position
+    #[default]
+    Normal,
+    /// Center the cursor line in the viewport
+    Center,
+    /// Put cursor line at top of viewport
+    Top,
+    /// Put cursor line at bottom of viewport
+    Bottom,
+}
+
 /// The main editor state
 pub struct Editor {
     pub textarea: TextArea<'static>,
@@ -32,6 +46,14 @@ pub struct Editor {
     pub highlighter: Option<SyntaxHighlighter>,
     /// Cached highlight spans (updated on buffer change)
     pub cached_highlights: Vec<HighlightSpan>,
+    /// Current recenter state for C-l cycling
+    pub recenter_state: RecenterState,
+    /// Whether the last command was a recenter (for consecutive C-l detection)
+    pub last_was_recenter: bool,
+    /// Viewport height (updated each frame for page up/down calculations)
+    pub viewport_height: u16,
+    /// Current vertical scroll offset (persists across frames)
+    pub scroll_offset: usize,
 }
 
 impl Editor {
@@ -73,6 +95,10 @@ impl Editor {
             syntax: None,
             highlighter: None,
             cached_highlights: Vec::new(),
+            recenter_state: RecenterState::default(),
+            last_was_recenter: false,
+            viewport_height: 24, // Default, updated each frame
+            scroll_offset: 0,
         }
     }
 
