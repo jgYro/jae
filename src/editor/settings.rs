@@ -12,6 +12,12 @@ pub struct Settings {
     pub show_preview: bool,
     pub cursor_color: Color,
     pub selection_color: Color,
+    /// Enable soft word wrapping (visual only, no actual line breaks)
+    pub soft_wrap: bool,
+    /// Character(s) shown at the start of wrapped lines (Helix-style)
+    pub wrap_indicator: String,
+    /// Color for the wrap indicator
+    pub wrap_indicator_color: Color,
 }
 
 impl Default for Settings {
@@ -23,6 +29,9 @@ impl Default for Settings {
             show_preview: true,
             cursor_color: Color::Red,
             selection_color: Color::Magenta,
+            soft_wrap: false,
+            wrap_indicator: "↪ ".to_string(),
+            wrap_indicator_color: Color::DarkGray,
         }
     }
 }

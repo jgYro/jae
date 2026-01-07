@@ -76,6 +76,11 @@ impl Editor {
         }
     }
 
+    /// Toggle soft word wrap mode
+    pub fn toggle_soft_wrap(&mut self) {
+        self.settings.soft_wrap = !self.settings.soft_wrap;
+    }
+
     /// Update textarea colors based on current settings
     pub fn update_textarea_colors(&mut self) {
         self.textarea.set_cursor_style(

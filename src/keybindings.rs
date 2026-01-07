@@ -1,6 +1,7 @@
 use crate::commands::CtrlXPrefix;
 use crate::editor::buffer_ops::is_text_input_key;
 use crate::editor::Editor;
+use crate::logging;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tui_textarea::{CursorMove, Input};
 
@@ -173,7 +174,9 @@ fn handle_string_edit_key(
 }
 
 pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
-    log::debug!("Key input: {:?} modifiers: {:?}", key.code, key.modifiers);
+    if logging::log_keys() {
+        log::debug!("Key input: {:?} modifiers: {:?}", key.code, key.modifiers);
+    }
 
     // C-x C-q: Ultimate force quit - bypasses everything, exits immediately
     // This is the "kill switch" that always works regardless of editor state
@@ -299,6 +302,9 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
             editor.move_cursor(CursorMove::Head);
         }
         (KeyCode::Char('e'), KeyModifiers::CONTROL) => {
+            if logging::log_keys() {
+                log::debug!("C-e pressed, calling move_cursor(End)");
+            }
             editor.move_cursor(CursorMove::End);
         }
 
@@ -307,6 +313,9 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
             editor.move_word_forward();
         }
         (KeyCode::Char('b'), KeyModifiers::ALT) => {
+            if logging::log_keys() {
+                log::debug!("M-b pressed, calling move_word_backward");
+            }
             editor.move_word_backward();
         }
 
@@ -331,7 +340,18 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
 
         // Selection and mark - doesn't reset kill sequence
         (KeyCode::Char(' '), KeyModifiers::CONTROL) => {
+            if logging::log_keys() || logging::log_selection() {
+                log::debug!("C-SPC pressed, calling set_mark");
+            }
             editor.set_mark();
+            if logging::log_selection() {
+                log::debug!(
+                    "After set_mark: mark={:?}, is_selecting={}, selection_range={:?}",
+                    editor.mark,
+                    editor.textarea.is_selecting(),
+                    editor.textarea.selection_range()
+                );
+            }
             // Store this key for detecting C-SPC C-SPC, but only if we didn't
             // just toggle off a selection (set_mark clears last_key in that case)
             if editor.last_key.is_some() || editor.mark.is_active() {
@@ -1259,6 +1279,12 @@ fn execute_command(editor: &mut Editor, command_name: &str) -> bool {
         }
         "redo" => {
             editor.redo();
+            true
+        }
+
+        // Display commands
+        "toggle-soft-wrap" => {
+            editor.toggle_soft_wrap();
             true
         }
 

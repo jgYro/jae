@@ -1,15 +1,48 @@
-15:07:44 [INFO] JAE starting with logging enabled
-15:07:44 [INFO] Opening file: src/main.rs
-15:07:45 [DEBUG] (1) jae::keybindings: Key input: Char(' ') modifiers: KeyModifiers(CONTROL)
-15:07:46 [DEBUG] (1) jae::keybindings: Key input: Char('e') modifiers: KeyModifiers(CONTROL)
-15:07:46 [DEBUG] (1) jae::keybindings: Key input: Char(' ') modifiers: KeyModifiers(CONTROL)
-15:07:47 [DEBUG] (1) jae::keybindings: Key input: Char(' ') modifiers: KeyModifiers(CONTROL)
-15:07:48 [DEBUG] (1) jae::keybindings: Key input: Char('a') modifiers: KeyModifiers(CONTROL)
-15:07:49 [DEBUG] (1) jae::keybindings: Key input: Char(' ') modifiers: KeyModifiers(CONTROL)
-15:07:50 [DEBUG] (1) jae::keybindings: Key input: Char(' ') modifiers: KeyModifiers(CONTROL)
-15:07:50 [DEBUG] (1) jae::keybindings: Key input: Char('e') modifiers: KeyModifiers(CONTROL)
-15:07:51 [DEBUG] (1) jae::keybindings: Key input: Char(' ') modifiers: KeyModifiers(CONTROL)
-15:07:51 [DEBUG] (1) jae::keybindings: Key input: Char(' ') modifiers: KeyModifiers(CONTROL)
-15:07:52 [DEBUG] (1) jae::keybindings: Key input: Char('a') modifiers: KeyModifiers(CONTROL)
-15:07:52 [DEBUG] (1) jae::keybindings: Key input: Char(' ') modifiers: KeyModifiers(CONTROL)
-15:07:53 [DEBUG] (1) jae::keybindings: Key input: Esc modifiers: KeyModifiers(0x0)
+22:18:53 [INFO] JAE starting with logging enabled
+22:18:53 [INFO] Selection logging enabled
+22:18:53 [INFO] Movement logging enabled
+22:18:53 [INFO] Opening file: README.md
+22:18:57 [INFO] Command: toggle-soft-wrap
+22:18:59 [DEBUG] (1) jae::editor::movement: move_cursor(Down): cursor=(0, 0), selection_range=None, is_selecting=false
+22:18:59 [DEBUG] (1) jae::editor::movement: move_cursor after: cursor=(1, 0), selection_range=None
+22:18:59 [DEBUG] (1) jae::editor::movement: move_cursor(Down): cursor=(1, 0), selection_range=None, is_selecting=false
+22:18:59 [DEBUG] (1) jae::editor::movement: move_cursor after: cursor=(2, 0), selection_range=None
+22:19:00 [DEBUG] (1) jae::editor::movement: move_cursor(Down): cursor=(2, 0), selection_range=None, is_selecting=false
+22:19:00 [DEBUG] (1) jae::editor::movement: move_cursor after: cursor=(3, 0), selection_range=None
+22:19:01 [DEBUG] (1) jae::editor::movement: move_cursor(Up): cursor=(3, 0), selection_range=None, is_selecting=false
+22:19:01 [DEBUG] (1) jae::editor::movement: move_cursor after: cursor=(2, 0), selection_range=None
+22:19:01 [DEBUG] (1) jae::keybindings: C-SPC pressed, calling set_mark
+22:19:01 [DEBUG] (1) jae::editor::selection: set_mark: cursor=(2, 0), current mark=None, is_selecting=false
+22:19:01 [DEBUG] (1) jae::keybindings: After set_mark: mark=Active { row: 2, col: 0 }, is_selecting=true, selection_range=Some(((2, 0), (2, 0)))
+22:19:02 [DEBUG] (1) jae::editor::movement: move_cursor(End): cursor=(2, 0), selection_range=Some(((2, 0), (2, 0))), is_selecting=true
+22:19:02 [DEBUG] (1) jae::editor::movement: move_cursor after: cursor=(2, 290), selection_range=Some(((2, 0), (2, 290)))
+22:19:02 [DEBUG] (1) jae::editor::movement: move_word_backward: cursor=(2, 290), selection_range=Some(((2, 0), (2, 290))), is_selecting=true
+22:19:02 [DEBUG] (1) jae::editor::movement: move_word_backward after: cursor=(2, 289), selection_range=Some(((2, 0), (2, 289)))
+22:19:03 [DEBUG] (1) jae::editor::movement: move_word_backward: cursor=(2, 289), selection_range=Some(((2, 0), (2, 289))), is_selecting=true
+22:19:03 [DEBUG] (1) jae::editor::movement: move_word_backward after: cursor=(2, 283), selection_range=Some(((2, 0), (2, 283)))
+22:19:03 [DEBUG] (1) jae::editor::movement: move_word_backward: cursor=(2, 283), selection_range=Some(((2, 0), (2, 283))), is_selecting=true
+22:19:03 [DEBUG] (1) jae::editor::movement: move_word_backward after: cursor=(2, 278), selection_range=Some(((2, 0), (2, 278)))
+22:19:03 [DEBUG] (1) jae::editor::movement: move_word_backward: cursor=(2, 278), selection_range=Some(((2, 0), (2, 278))), is_selecting=true
+22:19:03 [DEBUG] (1) jae::editor::movement: move_word_backward after: cursor=(2, 273), selection_range=Some(((2, 0), (2, 273)))
+22:19:03 [DEBUG] (1) jae::editor::movement: move_word_backward: cursor=(2, 273), selection_range=Some(((2, 0), (2, 273))), is_selecting=true
+22:19:03 [DEBUG] (1) jae::editor::movement: move_word_backward after: cursor=(2, 270), selection_range=Some(((2, 0), (2, 270)))
+22:19:03 [DEBUG] (1) jae::editor::movement: move_word_backward: cursor=(2, 270), selection_range=Some(((2, 0), (2, 270))), is_selecting=true
+22:19:03 [DEBUG] (1) jae::editor::movement: move_word_backward after: cursor=(2, 265), selection_range=Some(((2, 0), (2, 265)))
+22:19:03 [DEBUG] (1) jae::editor::movement: move_word_backward: cursor=(2, 265), selection_range=Some(((2, 0), (2, 265))), is_selecting=true
+22:19:03 [DEBUG] (1) jae::editor::movement: move_word_backward after: cursor=(2, 253), selection_range=Some(((2, 0), (2, 253)))
+22:19:04 [DEBUG] (1) jae::editor::movement: move_word_backward: cursor=(2, 253), selection_range=Some(((2, 0), (2, 253))), is_selecting=true
+22:19:04 [DEBUG] (1) jae::editor::movement: move_word_backward after: cursor=(2, 250), selection_range=Some(((2, 0), (2, 250)))
+22:19:04 [DEBUG] (1) jae::editor::movement: move_word_backward: cursor=(2, 250), selection_range=Some(((2, 0), (2, 250))), is_selecting=true
+22:19:04 [DEBUG] (1) jae::editor::movement: move_word_backward after: cursor=(2, 246), selection_range=Some(((2, 0), (2, 246)))
+22:19:04 [DEBUG] (1) jae::editor::movement: move_word_backward: cursor=(2, 246), selection_range=Some(((2, 0), (2, 246))), is_selecting=true
+22:19:04 [DEBUG] (1) jae::editor::movement: move_word_backward after: cursor=(2, 244), selection_range=Some(((2, 0), (2, 244)))
+22:19:04 [DEBUG] (1) jae::editor::movement: move_word_backward: cursor=(2, 244), selection_range=Some(((2, 0), (2, 244))), is_selecting=true
+22:19:04 [DEBUG] (1) jae::editor::movement: move_word_backward after: cursor=(2, 239), selection_range=Some(((2, 0), (2, 239)))
+22:19:04 [DEBUG] (1) jae::editor::movement: move_word_backward: cursor=(2, 239), selection_range=Some(((2, 0), (2, 239))), is_selecting=true
+22:19:04 [DEBUG] (1) jae::editor::movement: move_word_backward after: cursor=(2, 236), selection_range=Some(((2, 0), (2, 236)))
+22:19:04 [DEBUG] (1) jae::editor::movement: move_word_backward: cursor=(2, 236), selection_range=Some(((2, 0), (2, 236))), is_selecting=true
+22:19:04 [DEBUG] (1) jae::editor::movement: move_word_backward after: cursor=(2, 228), selection_range=Some(((2, 0), (2, 228)))
+22:19:05 [DEBUG] (1) jae::editor::movement: move_word_backward: cursor=(2, 228), selection_range=Some(((2, 0), (2, 228))), is_selecting=true
+22:19:05 [DEBUG] (1) jae::editor::movement: move_word_backward after: cursor=(2, 226), selection_range=Some(((2, 0), (2, 226)))
+22:19:05 [DEBUG] (1) jae::editor::movement: move_word_backward: cursor=(2, 226), selection_range=Some(((2, 0), (2, 226))), is_selecting=true
+22:19:05 [DEBUG] (1) jae::editor::movement: move_word_backward after: cursor=(2, 223), selection_range=Some(((2, 0), (2, 223)))

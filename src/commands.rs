@@ -176,6 +176,7 @@ impl KeyPrefix for CtrlXPrefix {
             (KeyCode::Char('x'), KeyModifiers::CONTROL) => Some("swap-cursor-mark"),
             (KeyCode::Char('q'), KeyModifiers::CONTROL) => Some("force-quit"),
             (KeyCode::Char('k'), KeyModifiers::NONE) => Some("delete-file"),
+            (KeyCode::Char('w'), KeyModifiers::NONE) => Some("toggle-soft-wrap"),
             _ => None,
         }
     }
@@ -188,6 +189,7 @@ impl KeyPrefix for CtrlXPrefix {
             PrefixBinding { key: KeyCombo::ctrl('x'), command: "swap-cursor-mark" },
             PrefixBinding { key: KeyCombo::ctrl('q'), command: "force-quit" },
             PrefixBinding { key: KeyCombo::plain('k'), command: "delete-file" },
+            PrefixBinding { key: KeyCombo::plain('w'), command: "toggle-soft-wrap" },
         ]
     }
 }
@@ -387,6 +389,14 @@ impl CommandRegistry {
             description: "Cancel active selection",
             category: Category::Selection,
             keybinding: None, // Via C-g
+        });
+
+        // Display commands
+        self.register(Command {
+            name: "toggle-soft-wrap",
+            description: "Toggle soft word wrap",
+            category: Category::Edit,
+            keybinding: Some(Keybinding::Sequence(vec![KeyCombo::ctrl('x'), KeyCombo::plain('w')])),
         });
 
         // System commands

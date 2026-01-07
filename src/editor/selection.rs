@@ -1,6 +1,7 @@
 //! Selection and clipboard operations for the editor.
 
 use super::{Editor, MarkState};
+use crate::logging;
 use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 use std::cmp::min;
 use tui_textarea::CursorMove;
@@ -11,6 +12,14 @@ impl Editor {
     /// Set or toggle the mark (C-SPC)
     pub fn set_mark(&mut self) {
         let cursor_pos = self.textarea.cursor();
+        if logging::log_selection() {
+            log::debug!(
+                "set_mark: cursor={:?}, current mark={:?}, is_selecting={}",
+                cursor_pos,
+                self.mark,
+                self.textarea.is_selecting()
+            );
+        }
 
         // Validate cursor position is within document bounds
         let lines = self.textarea.lines();

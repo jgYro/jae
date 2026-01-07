@@ -1,13 +1,8 @@
-mod clipboard;
-mod commands;
-mod editor;
-mod keybindings;
-mod logging;
-mod ui;
-
 use clap::Parser;
-use editor::Editor;
-use keybindings::handle_input;
+use jae::editor::Editor;
+use jae::keybindings::handle_input;
+use jae::logging;
+use jae::ui;
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use ratatui::Terminal;
 use std::path::Path;
@@ -22,6 +17,18 @@ struct Args {
     /// Enable debug logging to debug.log
     #[arg(long)]
     log: bool,
+
+    /// Log selection state changes (requires --log)
+    #[arg(long)]
+    selection: bool,
+
+    /// Log cursor movement (requires --log)
+    #[arg(long)]
+    movement: bool,
+
+    /// Log all key inputs (requires --log)
+    #[arg(long)]
+    keys: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -31,7 +38,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logging if enabled
     if args.log {
         logging::init("debug.log")?;
+        logging::configure(args.selection, args.movement, args.keys);
         log::info!("JAE starting with logging enabled");
+        if args.selection {
+            log::info!("Selection logging enabled");
+        }
+        if args.movement {
+            log::info!("Movement logging enabled");
+        }
+        if args.keys {
+            log::info!("Key input logging enabled");
+        }
     }
 
     let mut terminal = ratatui::init();
