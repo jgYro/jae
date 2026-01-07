@@ -175,10 +175,7 @@ impl Editor {
         }
 
         // Initialize syntax highlighter and cache highlights
-        self.highlighter = match self.language {
-            Language::Rust => SyntaxHighlighter::new_rust(),
-            Language::PlainText => None,
-        };
+        self.highlighter = SyntaxHighlighter::new(self.language);
         self.update_highlights();
 
         Ok(())

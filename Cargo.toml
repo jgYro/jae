@@ -18,5 +18,18 @@ arboard = "3.4"
 
 # Tree-sitter for syntax highlighting
 tree-sitter = "0.24"
-tree-sitter-rust = "0.23"
 tree-sitter-highlight = "0.24"
+
+# Language grammars
+tree-sitter-rust = "0.23"
+tree-sitter-python = "0.23"
+tree-sitter-javascript = "0.23"
+tree-sitter-typescript = "0.23"
+tree-sitter-go = "0.23"
+tree-sitter-c = "0.23"
+tree-sitter-cpp = "0.23"
+tree-sitter-json = "0.24"
+tree-sitter-md = "0.3"
+tree-sitter-html = "0.23"
+tree-sitter-css = "0.23"
+tree-sitter-java = "0.23"
