@@ -16,69 +16,79 @@ impl Editor {
 
     /// Expand ~ to home directory and resolve path
     pub fn expand_path(path_str: &str) -> PathBuf {
-        if path_str.starts_with('~') {
-            if let Some(home) = dirs::home_dir() {
-                if path_str == "~" {
-                    return home;
-                } else if let Some(rest) = path_str.strip_prefix("~/") {
-                    return home.join(rest);
-                }
-            }
+        match path_str.starts_with('~') {
+            true => match dirs::home_dir() {
+                Some(home) => match path_str {
+                    "~" => home,
+                    _ => match path_str.strip_prefix("~/") {
+                        Some(rest) => home.join(rest),
+                        None => PathBuf::from(path_str),
+                    },
+                },
+                None => PathBuf::from(path_str),
+            },
+            false => PathBuf::from(path_str),
         }
-        PathBuf::from(path_str)
     }
 
     /// Get filesystem completions for a partial path
     pub fn get_path_completions(partial: &str) -> Vec<String> {
         let expanded = Self::expand_path(partial);
 
-        let (dir, prefix) = if partial.ends_with('/') || partial.ends_with(std::path::MAIN_SEPARATOR)
-        {
-            (expanded.clone(), String::new())
-        } else {
-            let parent = expanded.parent().unwrap_or(&expanded);
-            let file_name = expanded
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or("");
-            (parent.to_path_buf(), file_name.to_string())
+        let (dir, prefix) = match partial.ends_with('/') || partial.ends_with(std::path::MAIN_SEPARATOR) {
+            true => (expanded.clone(), String::new()),
+            false => {
+                let parent = match expanded.parent() {
+                    Some(p) => p.to_path_buf(),
+                    None => expanded.clone(),
+                };
+                let file_name = match expanded.file_name().and_then(|s| s.to_str()) {
+                    Some(name) => name.to_string(),
+                    None => String::new(),
+                };
+                (parent, file_name)
+            }
         };
 
         let mut completions = Vec::new();
 
-        if let Ok(entries) = fs::read_dir(&dir) {
-            for entry in entries.flatten() {
-                if let Some(name) = entry.file_name().to_str() {
-                    if name.to_lowercase().starts_with(&prefix.to_lowercase()) {
-                        let mut completion = if partial.starts_with('~') && !partial.starts_with("~/")
-                        {
-                            format!("~/{}", name)
-                        } else if partial.ends_with('/')
-                            || partial.ends_with(std::path::MAIN_SEPARATOR)
-                        {
-                            format!("{}{}", partial, name)
-                        } else {
-                            let parent_str = if partial.contains('/')
-                                || partial.contains(std::path::MAIN_SEPARATOR)
-                            {
-                                let sep_pos = partial
-                                    .rfind(['/', std::path::MAIN_SEPARATOR])
-                                    .unwrap();
-                                &partial[..=sep_pos]
-                            } else {
-                                ""
-                            };
-                            format!("{}{}", parent_str, name)
-                        };
+        match fs::read_dir(&dir) {
+            Ok(entries) => {
+                for entry in entries.flatten() {
+                    match entry.file_name().to_str() {
+                        Some(name) => {
+                            match name.to_lowercase().starts_with(&prefix.to_lowercase()) {
+                                true => {
+                                    let mut completion = match (partial.starts_with('~') && !partial.starts_with("~/"), partial.ends_with('/') || partial.ends_with(std::path::MAIN_SEPARATOR)) {
+                                        (true, _) => format!("~/{}", name),
+                                        (_, true) => format!("{}{}", partial, name),
+                                        (false, false) => {
+                                            let parent_str = match partial.rfind(['/', std::path::MAIN_SEPARATOR]) {
+                                                Some(sep_pos) => &partial[..=sep_pos],
+                                                None => "",
+                                            };
+                                            format!("{}{}", parent_str, name)
+                                        }
+                                    };
 
-                        if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                            completion.push('/');
+                                    match entry.file_type() {
+                                        Ok(ft) => match ft.is_dir() {
+                                            true => completion.push('/'),
+                                            false => {}
+                                        },
+                                        Err(_) => {}
+                                    }
+
+                                    completions.push(completion);
+                                }
+                                false => {}
+                            }
                         }
-
-                        completions.push(completion);
+                        None => {}
                     }
                 }
             }
+            Err(_) => {}
         }
 
         completions.sort();
@@ -87,15 +97,15 @@ impl Editor {
 
     /// Open minibuffer for file selection (C-x C-f)
     pub fn open_file_prompt(&mut self) {
-        let initial_path = if let Some(ref current) = self.current_file {
-            current
-                .parent()
-                .map(|p| format!("{}/", p.display()))
-                .unwrap_or_else(|| "./".to_string())
-        } else {
-            std::env::current_dir()
-                .map(|p| format!("{}/", p.display()))
-                .unwrap_or_else(|_| "~/".to_string())
+        let initial_path = match &self.current_file {
+            Some(current) => match current.parent() {
+                Some(p) => format!("{}/", p.display()),
+                None => "./".to_string(),
+            },
+            None => match std::env::current_dir() {
+                Ok(p) => format!("{}/", p.display()),
+                Err(_) => "~/".to_string(),
+            },
         };
 
         let completions = Self::get_path_completions(&initial_path);
@@ -170,8 +180,9 @@ impl Editor {
         // Detect language and initialize syntax
         self.language = Language::from_path(path);
         self.syntax = Syntax::new(self.language);
-        if let Some(ref mut syntax) = self.syntax {
-            syntax.parse(&contents);
+        match &mut self.syntax {
+            Some(syntax) => syntax.parse(&contents),
+            None => {}
         }
 
         // Initialize syntax highlighter and cache highlights
@@ -183,22 +194,23 @@ impl Editor {
 
     /// Save current buffer to current_file (or prompt if none)
     pub fn save_file(&mut self) -> io::Result<()> {
-        if let Some(ref path) = self.current_file.clone() {
-            self.save_file_to(path)
-        } else {
-            self.save_file_as_prompt();
-            Ok(())
+        match self.current_file.clone() {
+            Some(path) => self.save_file_to(&path),
+            None => {
+                self.save_file_as_prompt();
+                Ok(())
+            }
         }
     }
 
     /// Open minibuffer for save-as path (C-x C-w)
     pub fn save_file_as_prompt(&mut self) {
-        let initial_path = if let Some(ref current) = self.current_file {
-            current.display().to_string()
-        } else {
-            std::env::current_dir()
-                .map(|p| format!("{}/", p.display()))
-                .unwrap_or_else(|_| "~/".to_string())
+        let initial_path = match &self.current_file {
+            Some(current) => current.display().to_string(),
+            None => match std::env::current_dir() {
+                Ok(p) => format!("{}/", p.display()),
+                Err(_) => "~/".to_string(),
+            },
         };
 
         let completions = Self::get_path_completions(&initial_path);
@@ -235,15 +247,13 @@ impl Editor {
 
     /// Start delete file confirmation chain (C-x k)
     pub fn delete_file_prompt(&mut self) {
-        let initial_path = self
-            .current_file
-            .as_ref()
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|| {
-                std::env::current_dir()
-                    .map(|p| format!("{}/", p.display()))
-                    .unwrap_or_else(|_| "~/".to_string())
-            });
+        let initial_path = match &self.current_file {
+            Some(p) => p.display().to_string(),
+            None => match std::env::current_dir() {
+                Ok(p) => format!("{}/", p.display()),
+                Err(_) => "~/".to_string(),
+            },
+        };
 
         let completions = Self::get_path_completions(&initial_path);
 
@@ -287,36 +297,41 @@ impl Editor {
 
     /// Execute minibuffer callback with current input
     pub fn execute_minibuffer_callback(&mut self) {
-        if let Some(ref fw) = self.floating_window {
-            if let FloatingMode::Minibuffer {
-                ref input,
-                ref callback,
-                ..
-            } = fw.mode
-            {
-                let path = Self::expand_path(input);
-                let callback_clone = callback.clone();
-                let path_clone = path.clone();
+        match &self.floating_window {
+            Some(fw) => match &fw.mode {
+                FloatingMode::Minibuffer {
+                    input,
+                    callback,
+                    ..
+                } => {
+                    let path = Self::expand_path(input);
+                    let callback_clone = callback.clone();
+                    let path_clone = path.clone();
 
-                self.floating_window = None;
-                self.focus_floating = false;
+                    self.floating_window = None;
+                    self.focus_floating = false;
 
-                match callback_clone {
-                    MinibufferCallback::OpenFile => {
-                        if let Err(e) = self.open_file(&path_clone) {
-                            eprintln!("Failed to open file: {}", e);
+                    match callback_clone {
+                        MinibufferCallback::OpenFile => {
+                            match self.open_file(&path_clone) {
+                                Ok(_) => {}
+                                Err(e) => eprintln!("Failed to open file: {}", e),
+                            }
                         }
-                    }
-                    MinibufferCallback::SaveFileAs => {
-                        if let Err(e) = self.save_file_to(&path_clone) {
-                            eprintln!("Failed to save file: {}", e);
+                        MinibufferCallback::SaveFileAs => {
+                            match self.save_file_to(&path_clone) {
+                                Ok(_) => {}
+                                Err(e) => eprintln!("Failed to save file: {}", e),
+                            }
                         }
-                    }
-                    MinibufferCallback::DeleteFile => {
-                        self.start_delete_confirmation(path_clone);
+                        MinibufferCallback::DeleteFile => {
+                            self.start_delete_confirmation(path_clone);
+                        }
                     }
                 }
-            }
+                _ => {}
+            },
+            None => {}
         }
     }
 

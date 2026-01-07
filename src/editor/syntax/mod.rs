@@ -90,4 +90,67 @@ mod tests {
         // Should have at least some spans for the heading and emphasis
         assert!(!spans.is_empty(), "Should have highlight spans for markdown");
     }
+
+    #[test]
+    fn test_typescript_highlighter() {
+        let highlighter = SyntaxHighlighter::new(Language::TypeScript);
+        assert!(highlighter.is_some(), "TypeScript highlighter should be created");
+
+        let mut hl = highlighter.unwrap();
+        let source = r#"
+import { useState } from "react";
+
+interface Props {
+    name: string;
+}
+
+function greet(props: Props): string {
+    const message = `Hello, ${props.name}!`;
+    return message;
+}
+"#;
+        let spans = hl.highlight(source);
+
+        println!("TypeScript spans ({} total):", spans.len());
+        for span in &spans {
+            let text = &source[span.start..span.end];
+            println!("  {:?} => {:?}", text, span.style);
+        }
+        assert!(!spans.is_empty(), "Should have highlight spans for TypeScript");
+    }
+
+    #[test]
+    fn test_tsx_jsx_highlighter() {
+        let highlighter = SyntaxHighlighter::new(Language::Tsx);
+        assert!(highlighter.is_some(), "TSX highlighter should be created");
+
+        let mut hl = highlighter.unwrap();
+        let source = r#"
+import React from "react";
+
+function App() {
+    return (
+        <div className="container">
+            <h1>Hello World</h1>
+            <button onClick={() => alert("clicked")}>Click me</button>
+        </div>
+    );
+}
+"#;
+        let spans = hl.highlight(source);
+
+        println!("TSX/JSX spans ({} total):", spans.len());
+        for span in &spans {
+            let text = &source[span.start..span.end];
+            println!("  {:?} => {:?}", text, span.style);
+        }
+        assert!(!spans.is_empty(), "Should have highlight spans for TSX");
+
+        // Check that we have tag highlighting (JSX elements like div, h1, button)
+        let has_tag = spans.iter().any(|s| {
+            let text = &source[s.start..s.end];
+            text == "div" || text == "h1" || text == "button"
+        });
+        assert!(has_tag, "Should highlight JSX tags");
+    }
 }

@@ -93,11 +93,12 @@ impl Editor {
 
     /// Update cached syntax highlights for the current buffer.
     pub fn update_highlights(&mut self) {
-        if let Some(ref mut highlighter) = self.highlighter {
-            let source = self.textarea.lines().join("\n");
-            self.cached_highlights = highlighter.highlight(&source);
-        } else {
-            self.cached_highlights.clear();
+        match &mut self.highlighter {
+            Some(highlighter) => {
+                let source = self.textarea.lines().join("\n");
+                self.cached_highlights = highlighter.highlight(&source);
+            }
+            None => self.cached_highlights.clear(),
         }
     }
 

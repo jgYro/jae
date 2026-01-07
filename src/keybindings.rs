@@ -243,8 +243,9 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
         editor.last_key = None;
 
         // Execute command if found
-        if let Some(cmd_name) = command {
-            return execute_command(editor, cmd_name);
+        match command {
+            Some(cmd_name) => return execute_command(editor, cmd_name),
+            None => {}
         }
 
         // Invalid follow-up key - just return (prefix was cancelled)
@@ -403,8 +404,8 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
 }
 
 fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
-    if let Some(ref mut fw) = editor.floating_window {
-        match &mut fw.mode {
+    match &mut editor.floating_window {
+        Some(fw) => match &mut fw.mode {
             crate::editor::FloatingMode::Menu { state, root_items, .. } => {
                 // Menu mode navigation
                 match (key.code, key.modifiers) {
@@ -472,40 +473,51 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                     }
                     // Toggle boolean or adjust number values
                     (KeyCode::Enter, _) | (KeyCode::Char(' '), _) => {
-                        if let Some(item) = items.get_mut(*selected) {
-                            if let crate::editor::SettingValue::Bool(b) = &mut item.value {
-                                *b = !*b;
-                                // Apply the setting
-                                match item.name.as_str() {
-                                    "Show Metadata" => editor.settings.show_metadata = *b,
-                                    "Show Preview" => editor.settings.show_preview = *b,
-                                    _ => {}
+                        match items.get_mut(*selected) {
+                            Some(item) => match &mut item.value {
+                                crate::editor::SettingValue::Bool(b) => {
+                                    *b = !*b;
+                                    // Apply the setting
+                                    match item.name.as_str() {
+                                        "Show Metadata" => editor.settings.show_metadata = *b,
+                                        "Show Preview" => editor.settings.show_preview = *b,
+                                        _ => {}
+                                    }
                                 }
-                            }
+                                _ => {}
+                            },
+                            None => {}
                         }
                     }
                     // Adjust number values with C-h/C-l (consistent with directory navigation)
                     (KeyCode::Left, _) | (KeyCode::Char('h'), KeyModifiers::CONTROL) => {
-                        if let Some(item) = items.get_mut(*selected) {
-                            let name = item.name.clone();
-                            match &mut item.value {
-                                crate::editor::SettingValue::Number(n) => {
-                                    if *n > 10 {
-                                        *n -= 5;
-                                        match name.as_str() {
-                                            "Window Width" => editor.settings.floating_window_width = *n,
-                                            "Window Height" => editor.settings.floating_window_height = *n,
-                                            _ => {}
+                        match items.get_mut(*selected) {
+                            Some(item) => {
+                                let name = item.name.clone();
+                                match &mut item.value {
+                                    crate::editor::SettingValue::Number(n) => {
+                                        match *n > 10 {
+                                            true => {
+                                                *n -= 5;
+                                                match name.as_str() {
+                                                    "Window Width" => editor.settings.floating_window_width = *n,
+                                                    "Window Height" => editor.settings.floating_window_height = *n,
+                                                    _ => {}
+                                                }
+                                            }
+                                            false => {}
                                         }
                                     }
-                                }
-                                crate::editor::SettingValue::Choice { current, .. } => {
-                                    if *current > 0 {
-                                        *current -= 1;
+                                    crate::editor::SettingValue::Choice { current, .. } => {
+                                        match *current > 0 {
+                                            true => *current -= 1,
+                                            false => {}
+                                        }
                                     }
+                                    _ => {}
                                 }
-                                _ => {}
                             }
+                            None => {}
                         }
                         // Extract the values we need before calling editor methods
                         let update_info = items.get(selected_idx).and_then(|item| {
@@ -524,39 +536,48 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                         let _ = fw; // End borrow
 
                         // Now update colors
-                        if let Some((is_cursor, index)) = update_info {
-                            if is_cursor {
-                                editor.settings.cursor_color = editor.settings.index_to_color(index, false);
-                            } else {
-                                editor.settings.selection_color = editor.settings.index_to_color(index, true);
+                        match update_info {
+                            Some((is_cursor, index)) => {
+                                match is_cursor {
+                                    true => editor.settings.cursor_color = editor.settings.index_to_color(index, false),
+                                    false => editor.settings.selection_color = editor.settings.index_to_color(index, true),
+                                }
+                                editor.update_textarea_colors();
                             }
-                            editor.update_textarea_colors();
+                            None => {}
                         }
 
                         // Return early since we dropped fw
                         return true;
                     }
                     (KeyCode::Right, _) | (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
-                        if let Some(item) = items.get_mut(*selected) {
-                            let name = item.name.clone();
-                            match &mut item.value {
-                                crate::editor::SettingValue::Number(n) => {
-                                    if *n < 100 {
-                                        *n += 5;
-                                        match name.as_str() {
-                                            "Window Width" => editor.settings.floating_window_width = *n,
-                                            "Window Height" => editor.settings.floating_window_height = *n,
-                                            _ => {}
+                        match items.get_mut(*selected) {
+                            Some(item) => {
+                                let name = item.name.clone();
+                                match &mut item.value {
+                                    crate::editor::SettingValue::Number(n) => {
+                                        match *n < 100 {
+                                            true => {
+                                                *n += 5;
+                                                match name.as_str() {
+                                                    "Window Width" => editor.settings.floating_window_width = *n,
+                                                    "Window Height" => editor.settings.floating_window_height = *n,
+                                                    _ => {}
+                                                }
+                                            }
+                                            false => {}
                                         }
                                     }
-                                }
-                                crate::editor::SettingValue::Choice { current, options } => {
-                                    if *current < options.len() - 1 {
-                                        *current += 1;
+                                    crate::editor::SettingValue::Choice { current, options } => {
+                                        match *current < options.len() - 1 {
+                                            true => *current += 1,
+                                            false => {}
+                                        }
                                     }
+                                    _ => {}
                                 }
-                                _ => {}
                             }
+                            None => {}
                         }
                         // Extract the values we need before calling editor methods
                         let update_info = items.get(selected_idx).and_then(|item| {
@@ -575,13 +596,15 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                         let _ = fw; // End borrow
 
                         // Now update colors
-                        if let Some((is_cursor, index)) = update_info {
-                            if is_cursor {
-                                editor.settings.cursor_color = editor.settings.index_to_color(index, false);
-                            } else {
-                                editor.settings.selection_color = editor.settings.index_to_color(index, true);
+                        match update_info {
+                            Some((is_cursor, index)) => {
+                                match is_cursor {
+                                    true => editor.settings.cursor_color = editor.settings.index_to_color(index, false),
+                                    false => editor.settings.selection_color = editor.settings.index_to_color(index, true),
+                                }
+                                editor.update_textarea_colors();
                             }
-                            editor.update_textarea_colors();
+                            None => {}
                         }
 
                         // Return early since we dropped fw
@@ -606,29 +629,42 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                 if matches!((key.code, key.modifiers), (KeyCode::Tab, _)) {
                     if !completions.is_empty() {
                         // If we have a selected completion that's a directory, enter it
-                        if let Some(idx) = *selected_completion {
-                            if let Some(comp) = completions.get(idx) {
-                                if is_directory(comp) {
-                                    // Enter the directory
-                                    *input = comp.clone();
-                                    *cursor_pos = input.chars().count();
-                                    *completions = crate::editor::Editor::get_path_completions(input);
-                                    *selected_completion = if completions.is_empty() { None } else { Some(0) };
-                                    return true;
+                        match *selected_completion {
+                            Some(idx) => match completions.get(idx) {
+                                Some(comp) => {
+                                    if is_directory(comp) {
+                                        // Enter the directory
+                                        *input = comp.clone();
+                                        *cursor_pos = input.chars().count();
+                                        *completions = crate::editor::Editor::get_path_completions(input);
+                                        *selected_completion = match completions.is_empty() {
+                                            true => None,
+                                            false => Some(0),
+                                        };
+                                        return true;
+                                    }
                                 }
-                            }
+                                None => {}
+                            },
+                            None => {}
                         }
 
                         // Otherwise, cycle to next completion and update input
-                        if let Some(idx) = *selected_completion {
-                            *selected_completion = Some((idx + 1) % completions.len());
-                        } else {
-                            *selected_completion = Some(0);
+                        match *selected_completion {
+                            Some(idx) => {
+                                *selected_completion = Some((idx + 1) % completions.len());
+                            }
+                            None => {
+                                *selected_completion = Some(0);
+                            }
                         }
                         // Update input to show selected completion
-                        if let Some(completion) = selected_completion.and_then(|i| completions.get(i)) {
-                            *input = completion.clone();
-                            *cursor_pos = input.chars().count();
+                        match selected_completion.and_then(|i| completions.get(i)) {
+                            Some(completion) => {
+                                *input = completion.clone();
+                                *cursor_pos = input.chars().count();
+                            }
+                            None => {}
                         }
                     } else {
                         // No completions, refresh them
@@ -636,9 +672,12 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                         if !completions.is_empty() {
                             *selected_completion = Some(0);
                             // Update input to first completion
-                            if let Some(comp) = completions.first() {
-                                *input = comp.clone();
-                                *cursor_pos = input.chars().count();
+                            match completions.first() {
+                                Some(comp) => {
+                                    *input = comp.clone();
+                                    *cursor_pos = input.chars().count();
+                                }
+                                None => {}
                             }
                         }
                     }
@@ -648,28 +687,43 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                 // Handle Up/Down - navigate completions and update input
                 match (key.code, key.modifiers) {
                     (KeyCode::Up, _) | (KeyCode::Char('p'), KeyModifiers::CONTROL) if !completions.is_empty() => {
-                        if let Some(idx) = *selected_completion {
-                            *selected_completion = Some(if idx == 0 { completions.len() - 1 } else { idx - 1 });
-                        } else {
-                            *selected_completion = Some(completions.len() - 1);
+                        match *selected_completion {
+                            Some(idx) => {
+                                *selected_completion = Some(match idx == 0 {
+                                    true => completions.len() - 1,
+                                    false => idx - 1,
+                                });
+                            }
+                            None => {
+                                *selected_completion = Some(completions.len() - 1);
+                            }
                         }
                         // Update input to show selected completion
-                        if let Some(completion) = selected_completion.and_then(|i| completions.get(i)) {
-                            *input = completion.clone();
-                            *cursor_pos = input.chars().count();
+                        match selected_completion.and_then(|i| completions.get(i)) {
+                            Some(completion) => {
+                                *input = completion.clone();
+                                *cursor_pos = input.chars().count();
+                            }
+                            None => {}
                         }
                         return true;
                     }
                     (KeyCode::Down, _) | (KeyCode::Char('n'), KeyModifiers::CONTROL) if !completions.is_empty() => {
-                        if let Some(idx) = *selected_completion {
-                            *selected_completion = Some((idx + 1) % completions.len());
-                        } else {
-                            *selected_completion = Some(0);
+                        match *selected_completion {
+                            Some(idx) => {
+                                *selected_completion = Some((idx + 1) % completions.len());
+                            }
+                            None => {
+                                *selected_completion = Some(0);
+                            }
                         }
                         // Update input to show selected completion
-                        if let Some(completion) = selected_completion.and_then(|i| completions.get(i)) {
-                            *input = completion.clone();
-                            *cursor_pos = input.chars().count();
+                        match selected_completion.and_then(|i| completions.get(i)) {
+                            Some(completion) => {
+                                *input = completion.clone();
+                                *cursor_pos = input.chars().count();
+                            }
+                            None => {}
                         }
                         return true;
                     }
@@ -682,11 +736,17 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                     if is_directory(input) {
                         // Already in a directory, refresh completions to show contents
                         *completions = crate::editor::Editor::get_path_completions(input);
-                        *selected_completion = if completions.is_empty() { None } else { Some(0) };
+                        *selected_completion = match completions.is_empty() {
+                            true => None,
+                            false => Some(0),
+                        };
                         // Update input to first completion if available
-                        if let Some(comp) = completions.first() {
-                            *input = comp.clone();
-                            *cursor_pos = input.chars().count();
+                        match completions.first() {
+                            Some(comp) => {
+                                *input = comp.clone();
+                                *cursor_pos = input.chars().count();
+                            }
+                            None => {}
                         }
                         return true;
                     }
@@ -782,24 +842,30 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
 
                     // Tab for completion - select the current item
                     (KeyCode::Tab, _) => {
-                        if let Some(cmd) = filtered_commands.get(*selected) {
-                            *input = cmd.name.to_string();
-                            *cursor_pos = input.len();
-                            // Reset selection to top since input changed
-                            *selected = 0;
+                        match filtered_commands.get(*selected) {
+                            Some(cmd) => {
+                                *input = cmd.name.to_string();
+                                *cursor_pos = input.len();
+                                // Reset selection to top since input changed
+                                *selected = 0;
+                            }
+                            None => {}
                         }
                         return true;
                     }
 
                     // Execute selected command
                     (KeyCode::Enter, _) => {
-                        if let Some(cmd) = filtered_commands.get(*selected) {
-                            let cmd_name = cmd.name;
-                            // Close the palette first
-                            editor.floating_window = None;
-                            editor.focus_floating = false;
-                            // Execute the command
-                            return execute_command(editor, cmd_name);
+                        match filtered_commands.get(*selected) {
+                            Some(cmd) => {
+                                let cmd_name = cmd.name;
+                                // Close the palette first
+                                editor.floating_window = None;
+                                editor.focus_floating = false;
+                                // Execute the command
+                                return execute_command(editor, cmd_name);
+                            }
+                            None => {}
                         }
                         return true;
                     }
@@ -814,13 +880,15 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                             }
                             MinibufferKeyResult::Execute => {
                                 // Try to execute by exact name match
-                                if let Some(cmd) = filtered_commands.get(*selected) {
-                                    let cmd_name = cmd.name;
-                                    editor.floating_window = None;
-                                    editor.focus_floating = false;
-                                    return execute_command(editor, cmd_name);
+                                match filtered_commands.get(*selected) {
+                                    Some(cmd) => {
+                                        let cmd_name = cmd.name;
+                                        editor.floating_window = None;
+                                        editor.focus_floating = false;
+                                        return execute_command(editor, cmd_name);
+                                    }
+                                    None => false,
                                 }
-                                false
                             }
                             MinibufferKeyResult::Handled => true,
                             MinibufferKeyResult::NotHandled => false,
@@ -834,15 +902,19 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                             let new_filtered = editor.filter_commands(&updated_input);
 
                             // Re-borrow and update
-                            if let Some(ref mut fw) = editor.floating_window {
-                                if let crate::editor::FloatingMode::CommandPalette {
-                                    filtered_commands,
-                                    selected,
-                                    ..
-                                } = &mut fw.mode {
-                                    *filtered_commands = new_filtered;
-                                    *selected = 0;
-                                }
+                            match &mut editor.floating_window {
+                                Some(ref mut fw) => match &mut fw.mode {
+                                    crate::editor::FloatingMode::CommandPalette {
+                                        filtered_commands,
+                                        selected,
+                                        ..
+                                    } => {
+                                        *filtered_commands = new_filtered;
+                                        *selected = 0;
+                                    }
+                                    _ => {}
+                                },
+                                None => {}
                             }
                         }
                     }
@@ -894,11 +966,13 @@ fn handle_floating_input(editor: &mut Editor, key: KeyEvent) -> bool {
                 let _ = fw; // End borrow
 
                 // Now process the action with full access to editor
-                if let Some(action) = action {
-                    process_confirm_action(editor, action, idx, total_steps);
+                match action {
+                    Some(action) => process_confirm_action(editor, action, idx, total_steps),
+                    None => {}
                 }
             }
-        }
+        },
+        None => {}
     }
 
     true
@@ -923,16 +997,23 @@ fn process_confirm_action(
         }
         ConfirmAction::Respond(response) => {
             // Take ownership of the floating window to call handle_response
-            if let Some(mut fw) = editor.floating_window.take() {
-                if let crate::editor::FloatingMode::Confirm { ref mut dialog, .. } = fw.mode {
-                    let result = dialog.handle_response(current_index, &response, editor);
+            match editor.floating_window.take() {
+                Some(mut fw) => match &mut fw.mode {
+                    crate::editor::FloatingMode::Confirm { ref mut dialog, .. } => {
+                        let result = dialog.handle_response(current_index, &response, editor);
 
-                    // Put the window back (might be modified by handle_response)
-                    editor.floating_window = Some(fw);
+                        // Put the window back (might be modified by handle_response)
+                        editor.floating_window = Some(fw);
 
-                    // Apply the result
-                    apply_confirm_result(editor, result, total_steps, current_index);
-                }
+                        // Apply the result
+                        apply_confirm_result(editor, result, total_steps, current_index);
+                    }
+                    _ => {
+                        // Put the window back if not a Confirm mode
+                        editor.floating_window = Some(fw);
+                    }
+                },
+                None => {}
             }
         }
     }
@@ -941,10 +1022,14 @@ fn process_confirm_action(
 /// Cancel a confirmation dialog
 fn cancel_confirm_dialog(editor: &mut crate::editor::Editor) {
     // Take ownership to avoid borrow issues
-    if let Some(fw) = editor.floating_window.take() {
-        if let crate::editor::FloatingMode::Confirm { dialog, .. } = fw.mode {
-            dialog.on_cancel(editor);
-        }
+    match editor.floating_window.take() {
+        Some(fw) => match fw.mode {
+            crate::editor::FloatingMode::Confirm { dialog, .. } => {
+                dialog.on_cancel(editor);
+            }
+            _ => {}
+        },
+        None => {}
     }
     editor.focus_floating = false;
 }
@@ -962,18 +1047,26 @@ fn apply_confirm_result(
         ResponseResult::Continue => {
             if current_index + 1 >= total_steps {
                 // Last step, execute on_complete
-                if let Some(fw) = editor.floating_window.take() {
-                    if let crate::editor::FloatingMode::Confirm { dialog, .. } = fw.mode {
-                        let _ = dialog.on_complete(editor);
-                    }
+                match editor.floating_window.take() {
+                    Some(fw) => match fw.mode {
+                        crate::editor::FloatingMode::Confirm { dialog, .. } => {
+                            let _ = dialog.on_complete(editor);
+                        }
+                        _ => {}
+                    },
+                    None => {}
                 }
                 editor.focus_floating = false;
             } else {
                 // Advance to next step
-                if let Some(ref mut fw) = editor.floating_window {
-                    if let crate::editor::FloatingMode::Confirm { current_index: ref mut ci, .. } = fw.mode {
-                        *ci = current_index + 1;
-                    }
+                match &mut editor.floating_window {
+                    Some(ref mut fw) => match &mut fw.mode {
+                        crate::editor::FloatingMode::Confirm { current_index: ref mut ci, .. } => {
+                            *ci = current_index + 1;
+                        }
+                        _ => {}
+                    },
+                    None => {}
                 }
             }
         }
@@ -985,10 +1078,14 @@ fn apply_confirm_result(
         }
         ResponseResult::Finish => {
             // Complete immediately
-            if let Some(fw) = editor.floating_window.take() {
-                if let crate::editor::FloatingMode::Confirm { dialog, .. } = fw.mode {
-                    let _ = dialog.on_complete(editor);
-                }
+            match editor.floating_window.take() {
+                Some(fw) => match fw.mode {
+                    crate::editor::FloatingMode::Confirm { dialog, .. } => {
+                        let _ = dialog.on_complete(editor);
+                    }
+                    _ => {}
+                },
+                None => {}
             }
             editor.focus_floating = false;
         }

@@ -7,31 +7,47 @@ use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter}
 /// Highlight names that we recognize and can style.
 pub const HIGHLIGHT_NAMES: &[&str] = &[
     "attribute",
+    "charset",
     "comment",
+    "comment.documentation",
     "constant",
     "constant.builtin",
     "constructor",
+    "delimiter",
+    "embedded",
+    "escape",
     "function",
     "function.builtin",
     "function.macro",
+    "function.method",
+    "function.special",
+    "import",
+    "keyframes",
     "keyword",
     "label",
+    "media",
+    "module",
+    "namespace",
     "number",
     "operator",
     "property",
+    "property.definition",
     "punctuation",
     "punctuation.bracket",
     "punctuation.delimiter",
     "punctuation.special",
     "string",
-    "string.special",
     "string.escape",
+    "string.special",
+    "string.special.key",
+    "supports",
+    "tag",
+    "tag.error",
     "type",
     "type.builtin",
     "variable",
     "variable.builtin",
     "variable.parameter",
-    "escape",
     // Markdown-specific
     "text.title",
     "text.emphasis",
@@ -52,26 +68,66 @@ pub struct HighlightSpan {
 /// Map highlight name to terminal style.
 pub fn highlight_style(highlight_name: &str) -> Style {
     match highlight_name {
-        "keyword" => Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
-        "function" | "function.builtin" => Style::default().fg(Color::Blue),
+        // Keywords and control flow
+        "keyword" | "import" => Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
+
+        // Functions
+        "function" | "function.builtin" | "function.method" | "function.special" => {
+            Style::default().fg(Color::Blue)
+        }
         "function.macro" => Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-        "type" | "type.builtin" => Style::default().fg(Color::Yellow),
-        "constructor" => Style::default().fg(Color::Yellow),
-        "string" | "string.special" => Style::default().fg(Color::Green),
+
+        // Types and constructors
+        "type" | "type.builtin" | "constructor" => Style::default().fg(Color::Yellow),
+
+        // Strings
+        "string" | "string.special" | "string.special.key" => Style::default().fg(Color::Green),
+
+        // Numbers and constants
         "number" => Style::default().fg(Color::Cyan),
-        "comment" => Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
-        "operator" => Style::default().fg(Color::White),
-        "punctuation" | "punctuation.bracket" | "punctuation.delimiter" => {
+        "constant" | "constant.builtin" => Style::default().fg(Color::Cyan),
+
+        // Comments
+        "comment" | "comment.documentation" => {
+            Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)
+        }
+
+        // Operators
+        "operator" => Style::default().fg(Color::LightMagenta),
+
+        // Punctuation
+        "punctuation" | "punctuation.bracket" | "punctuation.delimiter" | "delimiter" => {
             Style::default().fg(Color::White)
         }
+        "punctuation.special" => Style::default().fg(Color::Yellow),
+
+        // Variables
         "variable" | "variable.parameter" => Style::default().fg(Color::White),
         "variable.builtin" => Style::default().fg(Color::Red),
-        "constant" | "constant.builtin" => Style::default().fg(Color::Cyan),
+
+        // Properties and attributes
         "attribute" => Style::default().fg(Color::Yellow),
-        "property" => Style::default().fg(Color::Cyan),
+        "property" | "property.definition" => Style::default().fg(Color::Cyan),
+        "namespace" | "module" => Style::default().fg(Color::Yellow),
+
+        // Labels
         "label" => Style::default().fg(Color::Magenta),
+
+        // Escapes
         "escape" | "string.escape" => Style::default().fg(Color::Cyan),
-        "punctuation.special" => Style::default().fg(Color::Yellow),
+
+        // Embedded/injected code
+        "embedded" => Style::default().fg(Color::Red),
+
+        // HTML/JSX tags
+        "tag" => Style::default().fg(Color::Red),
+        "tag.error" => Style::default().fg(Color::Red).add_modifier(Modifier::UNDERLINED),
+
+        // CSS-specific
+        "charset" | "media" | "keyframes" | "supports" => {
+            Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)
+        }
+
         // Markdown-specific
         "text.title" => Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
         "text.emphasis" => Style::default().add_modifier(Modifier::ITALIC),
@@ -79,6 +135,7 @@ pub fn highlight_style(highlight_name: &str) -> Style {
         "text.literal" => Style::default().fg(Color::Green),
         "text.uri" => Style::default().fg(Color::Cyan).add_modifier(Modifier::UNDERLINED),
         "text.reference" => Style::default().fg(Color::Blue),
+
         _ => Style::default(),
     }
 }
@@ -107,27 +164,52 @@ impl SyntaxHighlighter {
                 "",
                 "",
             ),
-            Language::JavaScript => HighlightConfiguration::new(
-                tree_sitter_javascript::LANGUAGE.into(),
-                "javascript",
-                tree_sitter_javascript::HIGHLIGHT_QUERY,
-                tree_sitter_javascript::INJECTIONS_QUERY,
-                tree_sitter_javascript::LOCALS_QUERY,
-            ),
-            Language::TypeScript => HighlightConfiguration::new(
-                tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-                "typescript",
-                tree_sitter_typescript::HIGHLIGHTS_QUERY,
-                "",
-                tree_sitter_typescript::LOCALS_QUERY,
-            ),
-            Language::Tsx => HighlightConfiguration::new(
-                tree_sitter_typescript::LANGUAGE_TSX.into(),
-                "tsx",
-                tree_sitter_typescript::HIGHLIGHTS_QUERY,
-                "",
-                tree_sitter_typescript::LOCALS_QUERY,
-            ),
+            Language::JavaScript => {
+                // Combine base highlights with JSX highlights for JSX support
+                let combined_highlights = format!(
+                    "{}\n{}",
+                    tree_sitter_javascript::HIGHLIGHT_QUERY,
+                    tree_sitter_javascript::JSX_HIGHLIGHT_QUERY
+                );
+                HighlightConfiguration::new(
+                    tree_sitter_javascript::LANGUAGE.into(),
+                    "javascript",
+                    &combined_highlights,
+                    tree_sitter_javascript::INJECTIONS_QUERY,
+                    tree_sitter_javascript::LOCALS_QUERY,
+                )
+            }
+            Language::TypeScript => {
+                // TypeScript queries extend JavaScript, so combine them
+                let combined_highlights = format!(
+                    "{}\n{}",
+                    tree_sitter_javascript::HIGHLIGHT_QUERY,
+                    tree_sitter_typescript::HIGHLIGHTS_QUERY
+                );
+                HighlightConfiguration::new(
+                    tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+                    "typescript",
+                    &combined_highlights,
+                    tree_sitter_javascript::INJECTIONS_QUERY,
+                    tree_sitter_typescript::LOCALS_QUERY,
+                )
+            }
+            Language::Tsx => {
+                // TSX queries extend JavaScript + TypeScript + JSX
+                let combined_highlights = format!(
+                    "{}\n{}\n{}",
+                    tree_sitter_javascript::HIGHLIGHT_QUERY,
+                    tree_sitter_javascript::JSX_HIGHLIGHT_QUERY,
+                    tree_sitter_typescript::HIGHLIGHTS_QUERY
+                );
+                HighlightConfiguration::new(
+                    tree_sitter_typescript::LANGUAGE_TSX.into(),
+                    "tsx",
+                    &combined_highlights,
+                    tree_sitter_javascript::INJECTIONS_QUERY,
+                    tree_sitter_typescript::LOCALS_QUERY,
+                )
+            }
             Language::Go => HighlightConfiguration::new(
                 tree_sitter_go::LANGUAGE.into(),
                 "go",

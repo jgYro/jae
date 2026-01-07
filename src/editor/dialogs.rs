@@ -80,13 +80,16 @@ impl ConfirmationDialog for QuitConfirmation {
                 match response {
                     "y" => {
                         // Save and quit
-                        if let Err(_e) = editor.save_file() {
-                            // Save failed (likely no filename), don't quit yet
-                            ResponseResult::Cancel
-                        } else {
-                            // Save succeeded, mark for quit
-                            editor.pending_quit = true;
-                            ResponseResult::Finish
+                        match editor.save_file() {
+                            Ok(_) => {
+                                // Save succeeded, mark for quit
+                                editor.pending_quit = true;
+                                ResponseResult::Finish
+                            }
+                            Err(_) => {
+                                // Save failed (likely no filename), don't quit yet
+                                ResponseResult::Cancel
+                            }
                         }
                     }
                     "n" => {

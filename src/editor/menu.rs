@@ -84,53 +84,58 @@ impl Editor {
     }
 
     pub fn update_menu_preview(&mut self) {
-        let (action_opt, selected_text_opt) = if let Some(ref fw) = self.floating_window {
-            if let FloatingMode::Menu { state, .. } = &fw.mode {
-                if let Some(MenuItem::Action(action, _)) = state.items.get(state.selected) {
-                    (Some(action.clone()), self.get_selected_text())
-                } else {
-                    (None, None)
-                }
-            } else {
-                (None, None)
-            }
-        } else {
-            (None, None)
+        let (action_opt, selected_text_opt) = match &self.floating_window {
+            Some(fw) => match &fw.mode {
+                FloatingMode::Menu { state, .. } => match state.items.get(state.selected) {
+                    Some(MenuItem::Action(action, _)) => (Some(action.clone()), self.get_selected_text()),
+                    _ => (None, None),
+                },
+                _ => (None, None),
+            },
+            None => (None, None),
         };
 
-        if let (Some(action), Some(selected_text)) = (action_opt, selected_text_opt) {
-            let preview_text = self.generate_preview(&action, &selected_text);
-            let metadata_text = if self.settings.show_metadata {
-                self.generate_metadata(&action, &selected_text)
-            } else {
-                None
-            };
+        match (action_opt, selected_text_opt) {
+            (Some(action), Some(selected_text)) => {
+                let preview_text = self.generate_preview(&action, &selected_text);
+                let metadata_text = match self.settings.show_metadata {
+                    true => self.generate_metadata(&action, &selected_text),
+                    false => None,
+                };
 
-            if let Some(ref mut fw) = self.floating_window {
-                if let FloatingMode::Menu { preview, metadata, .. } = &mut fw.mode {
-                    *preview = preview_text;
-                    *metadata = metadata_text;
+                match &mut self.floating_window {
+                    Some(fw) => match &mut fw.mode {
+                        FloatingMode::Menu { preview, metadata, .. } => {
+                            *preview = preview_text;
+                            *metadata = metadata_text;
+                        }
+                        _ => {}
+                    },
+                    None => {}
                 }
             }
-        } else {
-            if let Some(ref mut fw) = self.floating_window {
-                if let FloatingMode::Menu { preview, metadata, .. } = &mut fw.mode {
-                    *preview = None;
-                    *metadata = None;
-                }
-            }
+            _ => match &mut self.floating_window {
+                Some(fw) => match &mut fw.mode {
+                    FloatingMode::Menu { preview, metadata, .. } => {
+                        *preview = None;
+                        *metadata = None;
+                    }
+                    _ => {}
+                },
+                None => {}
+            },
         }
     }
 
     fn generate_preview(&self, action: &MenuAction, text: &str) -> Option<String> {
-        if !self.settings.show_preview {
-            return None;
+        match self.settings.show_preview {
+            false => return None,
+            true => {}
         }
 
-        let preview_text = if text.chars().count() > 50 {
-            format!("{}...", text.chars().take(50).collect::<String>())
-        } else {
-            text.to_string()
+        let preview_text = match text.chars().count() > 50 {
+            true => format!("{}...", text.chars().take(50).collect::<String>()),
+            false => text.to_string(),
         };
 
         match action {
@@ -181,89 +186,91 @@ impl Editor {
     }
 
     pub fn toggle_floating_window(&mut self) {
-        if self.floating_window.is_some() {
-            self.floating_window = None;
-            self.focus_floating = false;
-        } else {
-            let selection_range = self.textarea.selection_range();
-            let was_mark_active = self.mark.is_active();
+        match self.floating_window.is_some() {
+            true => {
+                self.floating_window = None;
+                self.focus_floating = false;
+            }
+            false => {
+                let selection_range = self.textarea.selection_range();
+                let was_mark_active = self.mark.is_active();
 
-            let (cursor_row, cursor_col) = self.textarea.cursor();
-            let x = (cursor_col as u16).saturating_add(5).min(80);
-            let y = (cursor_row as u16).saturating_add(2).min(20);
+                let (cursor_row, cursor_col) = self.textarea.cursor();
+                let x = (cursor_col as u16).saturating_add(5).min(80);
+                let y = (cursor_row as u16).saturating_add(2).min(20);
 
-            let root_items = if was_mark_active && selection_range.is_some() {
-                vec![
-                    MenuItem::Category(
-                        "Transform Case".to_string(),
-                        vec![
-                            MenuItem::Action(MenuAction::Uppercase, "UPPERCASE".to_string()),
-                            MenuItem::Action(MenuAction::Lowercase, "lowercase".to_string()),
-                            MenuItem::Action(MenuAction::Capitalize, "Capitalize Words".to_string()),
-                        ],
-                    ),
-                    MenuItem::Category(
-                        "Encoding/Decoding".to_string(),
-                        vec![
-                            MenuItem::Action(MenuAction::Base64Encode, "Base64 Encode".to_string()),
-                            MenuItem::Action(MenuAction::Base64Decode, "Base64 Decode".to_string()),
-                            MenuItem::Action(MenuAction::UrlEncode, "URL Encode".to_string()),
-                            MenuItem::Action(MenuAction::UrlDecode, "URL Decode".to_string()),
-                        ],
-                    ),
-                    MenuItem::Action(MenuAction::Reverse, "Reverse Text".to_string()),
-                    MenuItem::Category(
-                        "Text Analysis".to_string(),
-                        vec![
-                            MenuItem::Action(MenuAction::CountWords, "Count Words".to_string()),
-                            MenuItem::Action(MenuAction::CountChars, "Count Characters".to_string()),
-                            MenuItem::Action(MenuAction::CountLines, "Count Lines".to_string()),
-                        ],
-                    ),
-                ]
-            } else {
-                vec![
-                    MenuItem::Category(
-                        "Insert Date/Time".to_string(),
-                        vec![
-                            MenuItem::Action(MenuAction::InsertDate, "Insert Date".to_string()),
-                            MenuItem::Action(MenuAction::InsertTime, "Insert Time".to_string()),
-                            MenuItem::Action(
-                                MenuAction::InsertDateTime,
-                                "Insert Date & Time".to_string(),
-                            ),
-                        ],
-                    ),
-                    MenuItem::Category(
-                        "Insert Templates".to_string(),
-                        vec![
-                            MenuItem::Action(MenuAction::InsertLorem, "Lorem Ipsum".to_string()),
-                            MenuItem::Action(MenuAction::InsertBullets, "Bullet List".to_string()),
-                            MenuItem::Action(MenuAction::InsertNumbers, "Numbered List".to_string()),
-                            MenuItem::Action(MenuAction::InsertTodo, "TODO List".to_string()),
-                        ],
-                    ),
-                ]
-            };
+                let root_items = match was_mark_active && selection_range.is_some() {
+                    true => vec![
+                        MenuItem::Category(
+                            "Transform Case".to_string(),
+                            vec![
+                                MenuItem::Action(MenuAction::Uppercase, "UPPERCASE".to_string()),
+                                MenuItem::Action(MenuAction::Lowercase, "lowercase".to_string()),
+                                MenuItem::Action(MenuAction::Capitalize, "Capitalize Words".to_string()),
+                            ],
+                        ),
+                        MenuItem::Category(
+                            "Encoding/Decoding".to_string(),
+                            vec![
+                                MenuItem::Action(MenuAction::Base64Encode, "Base64 Encode".to_string()),
+                                MenuItem::Action(MenuAction::Base64Decode, "Base64 Decode".to_string()),
+                                MenuItem::Action(MenuAction::UrlEncode, "URL Encode".to_string()),
+                                MenuItem::Action(MenuAction::UrlDecode, "URL Decode".to_string()),
+                            ],
+                        ),
+                        MenuItem::Action(MenuAction::Reverse, "Reverse Text".to_string()),
+                        MenuItem::Category(
+                            "Text Analysis".to_string(),
+                            vec![
+                                MenuItem::Action(MenuAction::CountWords, "Count Words".to_string()),
+                                MenuItem::Action(MenuAction::CountChars, "Count Characters".to_string()),
+                                MenuItem::Action(MenuAction::CountLines, "Count Lines".to_string()),
+                            ],
+                        ),
+                    ],
+                    false => vec![
+                        MenuItem::Category(
+                            "Insert Date/Time".to_string(),
+                            vec![
+                                MenuItem::Action(MenuAction::InsertDate, "Insert Date".to_string()),
+                                MenuItem::Action(MenuAction::InsertTime, "Insert Time".to_string()),
+                                MenuItem::Action(
+                                    MenuAction::InsertDateTime,
+                                    "Insert Date & Time".to_string(),
+                                ),
+                            ],
+                        ),
+                        MenuItem::Category(
+                            "Insert Templates".to_string(),
+                            vec![
+                                MenuItem::Action(MenuAction::InsertLorem, "Lorem Ipsum".to_string()),
+                                MenuItem::Action(MenuAction::InsertBullets, "Bullet List".to_string()),
+                                MenuItem::Action(MenuAction::InsertNumbers, "Numbered List".to_string()),
+                                MenuItem::Action(MenuAction::InsertTodo, "TODO List".to_string()),
+                            ],
+                        ),
+                    ],
+                };
 
-            let mode = FloatingMode::Menu {
-                state: MenuState::new(root_items.clone()),
-                root_items,
-                preview: None,
-                metadata: None,
-            };
+                let mode = FloatingMode::Menu {
+                    state: MenuState::new(root_items.clone()),
+                    root_items,
+                    preview: None,
+                    metadata: None,
+                };
 
-            self.floating_window = Some(FloatingWindow {
-                visible: true,
-                x,
-                y,
-                width: self.settings.floating_window_width,
-                height: self.settings.floating_window_height,
-                mode,
-            });
-            self.focus_floating = true;
+                self.floating_window = Some(FloatingWindow {
+                    visible: true,
+                    x,
+                    y,
+                    width: self.settings.floating_window_width,
+                    height: self.settings.floating_window_height,
+                    mode,
+                });
+                self.focus_floating = true;
 
-            self.update_menu_preview();
+                self.update_menu_preview();
+            }
         }
     }
 
@@ -271,20 +278,22 @@ impl Editor {
         // Save undo state before any menu operation that modifies text
         self.save_undo_state();
         match action {
-            MenuAction::Uppercase => {
-                if let Some(text) = self.get_selected_text() {
+            MenuAction::Uppercase => match self.get_selected_text() {
+                Some(text) => {
                     let transformed = text.to_uppercase();
                     self.replace_selection(transformed);
                 }
-            }
-            MenuAction::Lowercase => {
-                if let Some(text) = self.get_selected_text() {
+                None => {}
+            },
+            MenuAction::Lowercase => match self.get_selected_text() {
+                Some(text) => {
                     let transformed = text.to_lowercase();
                     self.replace_selection(transformed);
                 }
-            }
-            MenuAction::Capitalize => {
-                if let Some(text) = self.get_selected_text() {
+                None => {}
+            },
+            MenuAction::Capitalize => match self.get_selected_text() {
+                Some(text) => {
                     let transformed = text
                         .split_whitespace()
                         .map(|word| {
@@ -301,13 +310,15 @@ impl Editor {
                         .join(" ");
                     self.replace_selection(transformed);
                 }
-            }
-            MenuAction::Reverse => {
-                if let Some(text) = self.get_selected_text() {
+                None => {}
+            },
+            MenuAction::Reverse => match self.get_selected_text() {
+                Some(text) => {
                     let transformed = text.chars().rev().collect();
                     self.replace_selection(transformed);
                 }
-            }
+                None => {}
+            },
             MenuAction::InsertDate => {
                 use chrono::Local;
                 let date = Local::now().format("%Y-%m-%d").to_string();
@@ -321,57 +332,65 @@ impl Editor {
                 let bullets = "• Item 1\n• Item 2\n• Item 3";
                 self.textarea.insert_str(bullets);
             }
-            MenuAction::Base64Encode => {
-                if let Some(text) = self.get_selected_text() {
+            MenuAction::Base64Encode => match self.get_selected_text() {
+                Some(text) => {
                     use base64::{engine::general_purpose, Engine as _};
                     let encoded = general_purpose::STANDARD.encode(text.as_bytes());
                     self.replace_selection(encoded);
                 }
-            }
-            MenuAction::Base64Decode => {
-                if let Some(text) = self.get_selected_text() {
+                None => {}
+            },
+            MenuAction::Base64Decode => match self.get_selected_text() {
+                Some(text) => {
                     use base64::{engine::general_purpose, Engine as _};
-                    if let Ok(decoded_bytes) = general_purpose::STANDARD.decode(text.as_bytes()) {
-                        if let Ok(decoded_str) = String::from_utf8(decoded_bytes) {
-                            self.replace_selection(decoded_str);
-                        }
+                    match general_purpose::STANDARD.decode(text.as_bytes()) {
+                        Ok(decoded_bytes) => match String::from_utf8(decoded_bytes) {
+                            Ok(decoded_str) => self.replace_selection(decoded_str),
+                            Err(_) => {}
+                        },
+                        Err(_) => {}
                     }
                 }
-            }
-            MenuAction::UrlEncode => {
-                if let Some(text) = self.get_selected_text() {
+                None => {}
+            },
+            MenuAction::UrlEncode => match self.get_selected_text() {
+                Some(text) => {
                     let encoded = urlencoding::encode(&text).to_string();
                     self.replace_selection(encoded);
                 }
-            }
-            MenuAction::UrlDecode => {
-                if let Some(text) = self.get_selected_text() {
-                    if let Ok(decoded) = urlencoding::decode(&text) {
-                        self.replace_selection(decoded.to_string());
-                    }
-                }
-            }
-            MenuAction::CountWords => {
-                if let Some(text) = self.get_selected_text() {
+                None => {}
+            },
+            MenuAction::UrlDecode => match self.get_selected_text() {
+                Some(text) => match urlencoding::decode(&text) {
+                    Ok(decoded) => self.replace_selection(decoded.to_string()),
+                    Err(_) => {}
+                },
+                None => {}
+            },
+            MenuAction::CountWords => match self.get_selected_text() {
+                Some(text) => {
                     let count = text.split_whitespace().count();
                     let msg = format!("Word count: {}", count);
                     self.textarea.insert_str(&msg);
                 }
-            }
-            MenuAction::CountChars => {
-                if let Some(text) = self.get_selected_text() {
+                None => {}
+            },
+            MenuAction::CountChars => match self.get_selected_text() {
+                Some(text) => {
                     let count = text.chars().count();
                     let msg = format!("Character count: {}", count);
                     self.textarea.insert_str(&msg);
                 }
-            }
-            MenuAction::CountLines => {
-                if let Some(text) = self.get_selected_text() {
+                None => {}
+            },
+            MenuAction::CountLines => match self.get_selected_text() {
+                Some(text) => {
                     let count = text.lines().count();
                     let msg = format!("Line count: {}", count);
                     self.textarea.insert_str(&msg);
                 }
-            }
+                None => {}
+            },
             MenuAction::InsertTime => {
                 use chrono::Local;
                 let time = Local::now().format("%H:%M:%S").to_string();
@@ -393,8 +412,9 @@ impl Editor {
         }
 
         // Cancel mark/selection after applying action
-        if self.mark.is_active() {
-            self.cancel_mark();
+        match self.mark.is_active() {
+            true => self.cancel_mark(),
+            false => {}
         }
 
         self.floating_window = None;

@@ -11,23 +11,35 @@ pub struct ClipboardManager {
 impl ClipboardManager {
     pub fn new() -> Self {
         Self {
-            clipboard: Clipboard::new().ok(),
+            clipboard: match Clipboard::new() {
+                Ok(cb) => Some(cb),
+                Err(_) => None,
+            },
         }
     }
 
     /// Copy text to system clipboard
     pub fn copy(&mut self, text: &str) {
-        if text.is_empty() {
-            return;
-        }
-        if let Some(ref mut cb) = self.clipboard {
-            let _ = cb.set_text(text);
+        match text.is_empty() {
+            true => {}
+            false => match &mut self.clipboard {
+                Some(cb) => {
+                    let _ = cb.set_text(text);
+                }
+                None => {}
+            },
         }
     }
 
     /// Paste text from system clipboard
     pub fn paste(&mut self) -> Option<String> {
-        self.clipboard.as_mut()?.get_text().ok()
+        match &mut self.clipboard {
+            Some(cb) => match cb.get_text() {
+                Ok(text) => Some(text),
+                Err(_) => None,
+            },
+            None => None,
+        }
     }
 }
 

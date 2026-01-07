@@ -38,22 +38,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut editor = Editor::new();
 
     // Handle path argument
-    if let Some(path_str) = args.path {
-        let path = Path::new(&path_str);
-        if path.is_file() {
-            log::info!("Opening file: {}", path.display());
-            if let Err(e) = editor.open_file(path) {
-                log::error!("Failed to open file: {}", e);
+    match args.path {
+        Some(path_str) => {
+            let path = Path::new(&path_str);
+            match (path.is_file(), path.is_dir()) {
+                (true, _) => {
+                    log::info!("Opening file: {}", path.display());
+                    match editor.open_file(path) {
+                        Ok(_) => {}
+                        Err(e) => log::error!("Failed to open file: {}", e),
+                    }
+                }
+                (_, true) => {
+                    log::info!("Opening directory: {}", path.display());
+                    editor.open_directory_prompt(path);
+                }
+                (false, false) => {
+                    // Path doesn't exist - could be a new file
+                    // Just set current_file so save will work
+                    log::info!("New file: {}", path.display());
+                    editor.current_file = Some(path.to_path_buf());
+                }
             }
-        } else if path.is_dir() {
-            log::info!("Opening directory: {}", path.display());
-            editor.open_directory_prompt(path);
-        } else {
-            // Path doesn't exist - could be a new file
-            // Just set current_file so save will work
-            log::info!("New file: {}", path.display());
-            editor.current_file = Some(path.to_path_buf());
         }
+        None => {}
     }
 
     let result = run_app(&mut terminal, &mut editor);
@@ -69,11 +77,15 @@ fn run_app(
     loop {
         terminal.draw(|frame| ui::draw(frame, editor))?;
 
-        if let Event::Key(key) = event::read()? {
-            // Only handle key press events (Windows sends both Press and Release)
-            if key.kind == KeyEventKind::Press && !handle_input(editor, key) {
-                break;
+        match event::read()? {
+            Event::Key(key) => {
+                // Only handle key press events (Windows sends both Press and Release)
+                match key.kind == KeyEventKind::Press && !handle_input(editor, key) {
+                    true => break,
+                    false => {}
+                }
             }
+            _ => {}
         }
     }
 

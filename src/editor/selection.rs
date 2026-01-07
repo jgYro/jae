@@ -65,8 +65,11 @@ impl Editor {
     pub fn cancel_mark(&mut self) {
         self.textarea.cancel_selection();
         // Keep mark position for navigation but deactivate
-        if let MarkState::Active { row, col } = self.mark {
-            self.mark = MarkState::Set { row, col };
+        match self.mark {
+            MarkState::Active { row, col } => {
+                self.mark = MarkState::Set { row, col };
+            }
+            _ => {}
         }
     }
 
@@ -219,15 +222,16 @@ impl Editor {
     /// Returns true if text was actually cut, false if no selection.
     /// Handles undo state and modification tracking internally.
     pub fn cut_region(&mut self) -> bool {
-        if let Some(text) = self.get_selected_text() {
-            self.save_undo_state();
-            self.clipboard.copy(&text);
-            self.textarea.cut();
-            self.mark = MarkState::None;
-            self.mark_modified();
-            true
-        } else {
-            false
+        match self.get_selected_text() {
+            Some(text) => {
+                self.save_undo_state();
+                self.clipboard.copy(&text);
+                self.textarea.cut();
+                self.mark = MarkState::None;
+                self.mark_modified();
+                true
+            }
+            None => false,
         }
     }
 
@@ -235,9 +239,12 @@ impl Editor {
     ///
     /// Does not modify buffer, so no undo state or modification tracking needed.
     pub fn copy_region(&mut self) {
-        if let Some(text) = self.get_selected_text() {
-            self.clipboard.copy(&text);
-            self.cancel_mark();
+        match self.get_selected_text() {
+            Some(text) => {
+                self.clipboard.copy(&text);
+                self.cancel_mark();
+            }
+            None => {}
         }
     }
 
@@ -246,13 +253,14 @@ impl Editor {
     /// Returns true if text was actually pasted, false if clipboard empty.
     /// Handles undo state and modification tracking internally.
     pub fn paste(&mut self) -> bool {
-        if let Some(text) = self.clipboard.paste() {
-            self.save_undo_state();
-            self.textarea.insert_str(&text);
-            self.mark_modified();
-            true
-        } else {
-            false
+        match self.clipboard.paste() {
+            Some(text) => {
+                self.save_undo_state();
+                self.textarea.insert_str(&text);
+                self.mark_modified();
+                true
+            }
+            None => false,
         }
     }
 

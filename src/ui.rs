@@ -25,8 +25,9 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
     render_status_bar(frame, editor, chunks[1]);
 
     // Floating window
-    if let Some(ref fw) = editor.floating_window {
-        if fw.visible {
+    match &editor.floating_window {
+        Some(ref fw) => {
+            if fw.visible {
             let area = Rect::new(fw.x, fw.y, fw.width, fw.height);
 
             // Clear background first
@@ -130,26 +131,35 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
                     frame.render_widget(list, chunks[0]);
 
                     // Render preview if available
-                    if let Some(preview_text) = preview {
-                        if has_preview {
-                            let preview_widget = Paragraph::new(preview_text.clone())
-                                .block(Block::default()
-                                    .borders(Borders::TOP)
-                                    .title("Preview")
-                                    .border_style(Style::default().fg(Color::DarkGray)));
-                            frame.render_widget(preview_widget, chunks[1]);
+                    match preview {
+                        Some(preview_text) => {
+                            if has_preview {
+                                let preview_widget = Paragraph::new(preview_text.clone())
+                                    .block(Block::default()
+                                        .borders(Borders::TOP)
+                                        .title("Preview")
+                                        .border_style(Style::default().fg(Color::DarkGray)));
+                                frame.render_widget(preview_widget, chunks[1]);
+                            }
                         }
+                        None => {}
                     }
 
                     // Render metadata if available
-                    if let Some(metadata_text) = metadata {
-                        let metadata_idx = if has_preview && has_metadata { 2 } else { 1 };
-                        let metadata_widget = Paragraph::new(metadata_text.clone())
-                            .block(Block::default()
-                                .borders(Borders::TOP)
-                                .title("Metadata")
-                                .border_style(Style::default().fg(Color::DarkGray)));
-                        frame.render_widget(metadata_widget, chunks[metadata_idx]);
+                    match metadata {
+                        Some(metadata_text) => {
+                            let metadata_idx = match has_preview && has_metadata {
+                                true => 2,
+                                false => 1,
+                            };
+                            let metadata_widget = Paragraph::new(metadata_text.clone())
+                                .block(Block::default()
+                                    .borders(Borders::TOP)
+                                    .title("Metadata")
+                                    .border_style(Style::default().fg(Color::DarkGray)));
+                            frame.render_widget(metadata_widget, chunks[metadata_idx]);
+                        }
+                        None => {}
                     }
                 }
                 FloatingMode::Settings { items, selected } => {
@@ -231,74 +241,77 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
                     ];
 
                     // Build path with |/| indicator at directory boundary
-                    if let Some(slash_pos) = last_slash_pos {
-                        // Part before the slash
-                        let before_slash: String = chars[..slash_pos].iter().collect();
-                        spans.push(Span::raw(before_slash));
+                    match last_slash_pos {
+                        Some(slash_pos) => {
+                            // Part before the slash
+                            let before_slash: String = chars[..slash_pos].iter().collect();
+                            spans.push(Span::raw(before_slash));
 
-                        // The |/| indicator (highlighted)
-                        spans.push(Span::styled(
-                            "|/|",
-                            Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
-                        ));
+                            // The |/| indicator (highlighted)
+                            spans.push(Span::styled(
+                                "|/|",
+                                Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
+                            ));
 
-                        // Part after the slash (the filename portion)
-                        let after_slash_start = slash_pos + 1;
-                        if after_slash_start < chars.len() {
-                            // Handle cursor position within the filename portion
-                            let relative_cursor = cursor_pos.saturating_sub(after_slash_start);
-                            let filename_chars: Vec<char> = chars[after_slash_start..].to_vec();
+                            // Part after the slash (the filename portion)
+                            let after_slash_start = slash_pos + 1;
+                            if after_slash_start < chars.len() {
+                                // Handle cursor position within the filename portion
+                                let relative_cursor = cursor_pos.saturating_sub(after_slash_start);
+                                let filename_chars: Vec<char> = chars[after_slash_start..].to_vec();
 
-                            if *cursor_pos >= after_slash_start && *cursor_pos <= chars.len() {
-                                // Cursor is in the filename portion
-                                let before_cursor: String = filename_chars[..relative_cursor].iter().collect();
-                                let cursor_char = filename_chars.get(relative_cursor).unwrap_or(&' ');
-                                let after_cursor: String = filename_chars[relative_cursor..].iter().skip(1).collect();
+                                if *cursor_pos >= after_slash_start && *cursor_pos <= chars.len() {
+                                    // Cursor is in the filename portion
+                                    let before_cursor: String = filename_chars[..relative_cursor].iter().collect();
+                                    let cursor_char = filename_chars.get(relative_cursor).unwrap_or(&' ');
+                                    let after_cursor: String = filename_chars[relative_cursor..].iter().skip(1).collect();
 
-                                spans.push(Span::raw(before_cursor));
+                                    spans.push(Span::raw(before_cursor));
+                                    spans.push(Span::styled(
+                                        cursor_char.to_string(),
+                                        Style::default().bg(Color::White).fg(Color::Black),
+                                    ));
+                                    spans.push(Span::raw(after_cursor));
+                                } else {
+                                    // Cursor is in the directory portion (shouldn't normally happen)
+                                    let filename: String = filename_chars.iter().collect();
+                                    spans.push(Span::raw(filename));
+                                }
+                            } else {
+                                // Cursor is right after the slash
                                 spans.push(Span::styled(
-                                    cursor_char.to_string(),
+                                    " ",
                                     Style::default().bg(Color::White).fg(Color::Black),
                                 ));
-                                spans.push(Span::raw(after_cursor));
-                            } else {
-                                // Cursor is in the directory portion (shouldn't normally happen)
-                                let filename: String = filename_chars.iter().collect();
-                                spans.push(Span::raw(filename));
                             }
-                        } else {
-                            // Cursor is right after the slash
+                        }
+                        None => {
+                            // No directory separator - simple cursor display
+                            let before_cursor: String = chars[..*cursor_pos].iter().collect();
+                            let cursor_char = chars.get(*cursor_pos).unwrap_or(&' ');
+                            let after_cursor: String = chars[*cursor_pos..].iter().skip(1).collect();
+
+                            spans.push(Span::raw(before_cursor));
                             spans.push(Span::styled(
-                                " ",
+                                cursor_char.to_string(),
                                 Style::default().bg(Color::White).fg(Color::Black),
                             ));
+                            spans.push(Span::raw(after_cursor));
                         }
-                    } else {
-                        // No directory separator - simple cursor display
-                        let before_cursor: String = chars[..*cursor_pos].iter().collect();
-                        let cursor_char = chars.get(*cursor_pos).unwrap_or(&' ');
-                        let after_cursor: String = chars[*cursor_pos..].iter().skip(1).collect();
-
-                        spans.push(Span::raw(before_cursor));
-                        spans.push(Span::styled(
-                            cursor_char.to_string(),
-                            Style::default().bg(Color::White).fg(Color::Black),
-                        ));
-                        spans.push(Span::raw(after_cursor));
                     }
 
                     let input_line = Line::from(spans);
 
                     // Show completions if any
-                    let completion_hint = if !completions.is_empty() {
-                        if let Some(idx) = selected_completion {
-                            let comp = completions.get(*idx).cloned().unwrap_or_default();
-                            format!(" [{}] ({}/{})", comp, idx + 1, completions.len())
-                        } else {
-                            format!(" ({} completions)", completions.len())
-                        }
-                    } else {
-                        String::new()
+                    let completion_hint = match !completions.is_empty() {
+                        true => match selected_completion {
+                            Some(idx) => {
+                                let comp = completions.get(*idx).cloned().unwrap_or_default();
+                                format!(" [{}] ({}/{})", comp, idx + 1, completions.len())
+                            }
+                            None => format!(" ({} completions)", completions.len()),
+                        },
+                        false => String::new(),
                     };
 
                     let status_line = Line::from(vec![
@@ -330,48 +343,50 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
 
                     frame.render_widget(Clear, confirm_area);
 
-                    if let Some(step) = steps.get(*current_index) {
-                        use crate::editor::ResponseType;
+                    match steps.get(*current_index) {
+                        Some(step) => {
+                            use crate::editor::ResponseType;
 
-                        let step_indicator = if steps.len() > 1 {
-                            format!(" [{}/{}]", current_index + 1, steps.len())
-                        } else {
-                            String::new()
-                        };
+                            let step_indicator = match steps.len() > 1 {
+                                true => format!(" [{}/{}]", current_index + 1, steps.len()),
+                                false => String::new(),
+                            };
 
-                        let prompt_line = match &step.response_type {
-                            ResponseType::Binary => {
-                                Line::from(vec![
-                                    Span::styled(&step.prompt, Style::default().fg(Color::Yellow)),
-                                    Span::styled(" (y/n)", Style::default().fg(Color::Cyan)),
-                                    Span::styled(step_indicator, Style::default().fg(Color::DarkGray)),
-                                ])
-                            }
-                            ResponseType::Choice(options) => {
-                                let mut spans = vec![
-                                    Span::styled(&step.prompt, Style::default().fg(Color::Yellow)),
-                                    Span::raw(" ("),
-                                ];
-                                for (i, (key, label)) in options.iter().enumerate() {
-                                    if i > 0 {
-                                        spans.push(Span::raw("/"));
-                                    }
-                                    spans.push(Span::styled(
-                                        key.to_string(),
-                                        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-                                    ));
-                                    spans.push(Span::raw(format!(":{}", label)));
+                            let prompt_line = match &step.response_type {
+                                ResponseType::Binary => {
+                                    Line::from(vec![
+                                        Span::styled(&step.prompt, Style::default().fg(Color::Yellow)),
+                                        Span::styled(" (y/n)", Style::default().fg(Color::Cyan)),
+                                        Span::styled(step_indicator, Style::default().fg(Color::DarkGray)),
+                                    ])
                                 }
-                                spans.push(Span::raw(")"));
-                                spans.push(Span::styled(step_indicator, Style::default().fg(Color::DarkGray)));
-                                Line::from(spans)
-                            }
-                        };
+                                ResponseType::Choice(options) => {
+                                    let mut spans = vec![
+                                        Span::styled(&step.prompt, Style::default().fg(Color::Yellow)),
+                                        Span::raw(" ("),
+                                    ];
+                                    for (i, (key, label)) in options.iter().enumerate() {
+                                        if i > 0 {
+                                            spans.push(Span::raw("/"));
+                                        }
+                                        spans.push(Span::styled(
+                                            key.to_string(),
+                                            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                                        ));
+                                        spans.push(Span::raw(format!(":{}", label)));
+                                    }
+                                    spans.push(Span::raw(")"));
+                                    spans.push(Span::styled(step_indicator, Style::default().fg(Color::DarkGray)));
+                                    Line::from(spans)
+                                }
+                            };
 
-                        let widget = Paragraph::new(vec![prompt_line])
-                            .block(Block::default().borders(Borders::TOP));
+                            let widget = Paragraph::new(vec![prompt_line])
+                                .block(Block::default().borders(Borders::TOP));
 
-                        frame.render_widget(widget, confirm_area);
+                            frame.render_widget(widget, confirm_area);
+                        }
+                        None => {}
                     }
                 }
 
@@ -449,11 +464,14 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
                         ];
 
                         // Show keybinding if available
-                        if let Some(ref kb) = cmd.keybinding {
-                            cmd_spans.push(Span::styled(
-                                format!(" [{}]", kb),
-                                Style::default().fg(Color::Cyan),
-                            ));
+                        match &cmd.keybinding {
+                            Some(ref kb) => {
+                                cmd_spans.push(Span::styled(
+                                    format!(" [{}]", kb),
+                                    Style::default().fg(Color::Cyan),
+                                ));
+                            }
+                            None => {}
                         }
 
                         // Show description
@@ -490,7 +508,9 @@ pub fn draw(frame: &mut Frame, editor: &Editor) {
                     frame.render_widget(widget, palette_area);
                 }
             }
+            }
         }
+        None => {}
     }
 }
 

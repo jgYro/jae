@@ -91,42 +91,53 @@ impl Widget for EditorWidget<'_> {
                 let mut style = byte_styles.get(byte_offset).copied().unwrap_or_default();
 
                 // Check if this position is in the selection (overlay on top)
-                if let Some((sel_start, sel_end)) = selection_range {
-                    let pos = (line_idx, col);
-                    let in_selection = if sel_start <= sel_end {
-                        pos >= sel_start && pos < sel_end
-                    } else {
-                        pos >= sel_end && pos < sel_start
-                    };
+                match selection_range {
+                    Some((sel_start, sel_end)) => {
+                        let pos = (line_idx, col);
+                        let in_selection = match sel_start <= sel_end {
+                            true => pos >= sel_start && pos < sel_end,
+                            false => pos >= sel_end && pos < sel_start,
+                        };
 
-                    if in_selection {
-                        // Apply selection style as overlay (Helix approach)
-                        style = style.patch(
-                            Style::default()
-                                .bg(self.editor.settings.selection_color)
-                                .fg(Color::White),
-                        );
+                        match in_selection {
+                            true => {
+                                // Apply selection style as overlay (Helix approach)
+                                style = style.patch(
+                                    Style::default()
+                                        .bg(self.editor.settings.selection_color)
+                                        .fg(Color::White),
+                                );
+                            }
+                            false => {}
+                        }
                     }
+                    None => {}
                 }
 
                 // Check if this is the cursor position
-                if line_idx == cursor_row && col == cursor_col {
-                    style = Style::default()
-                        .bg(self.editor.settings.cursor_color)
-                        .fg(Color::White)
-                        .add_modifier(Modifier::BOLD);
+                match line_idx == cursor_row && col == cursor_col {
+                    true => {
+                        style = Style::default()
+                            .bg(self.editor.settings.cursor_color)
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD);
+                    }
+                    false => {}
                 }
 
-                if let Some(cell) = buf.cell_mut((x, y)) {
-                    cell.set_char(ch).set_style(style);
+                match buf.cell_mut((x, y)) {
+                    Some(cell) => {
+                        cell.set_char(ch).set_style(style);
+                    }
+                    None => {}
                 }
                 x += 1;
             }
 
-            // Handle cursor at end of line
-            if line_idx == cursor_row && cursor_col >= line.chars().count() {
-                if x < area.x + area.width {
-                    if let Some(cell) = buf.cell_mut((x, y)) {
+            // Handle cursor at end of line (clippy: collapsed if statements)
+            match line_idx == cursor_row && cursor_col >= line.chars().count() && x < area.x + area.width {
+                true => match buf.cell_mut((x, y)) {
+                    Some(cell) => {
                         cell.set_char(' ').set_style(
                             Style::default()
                                 .bg(self.editor.settings.cursor_color)
@@ -134,31 +145,42 @@ impl Widget for EditorWidget<'_> {
                                 .add_modifier(Modifier::BOLD),
                         );
                     }
-                }
+                    None => {}
+                },
+                false => {}
             }
 
             // Selection highlight for end of line (the newline character)
-            if let Some((sel_start, sel_end)) = selection_range {
-                let line_end_pos = (line_idx, line.chars().count());
-                let in_selection = if sel_start <= sel_end {
-                    line_end_pos >= sel_start && line_end_pos < sel_end
-                } else {
-                    line_end_pos >= sel_end && line_end_pos < sel_start
-                };
+            match selection_range {
+                Some((sel_start, sel_end)) => {
+                    let line_end_pos = (line_idx, line.chars().count());
+                    let in_selection = match sel_start <= sel_end {
+                        true => line_end_pos >= sel_start && line_end_pos < sel_end,
+                        false => line_end_pos >= sel_end && line_end_pos < sel_start,
+                    };
 
-                if in_selection && line_idx < lines.len() - 1 {
-                    // Highlight the "newline" position
-                    let end_x = area.x + line.chars().count() as u16;
-                    if end_x < area.x + area.width && !(line_idx == cursor_row && cursor_col >= line.chars().count()) {
-                        if let Some(cell) = buf.cell_mut((end_x, y)) {
-                            cell.set_char(' ').set_style(
-                                Style::default()
-                                    .bg(self.editor.settings.selection_color)
-                                    .fg(Color::White),
-                            );
+                    match in_selection && line_idx < lines.len() - 1 {
+                        true => {
+                            // Highlight the "newline" position
+                            let end_x = area.x + line.chars().count() as u16;
+                            match end_x < area.x + area.width && !(line_idx == cursor_row && cursor_col >= line.chars().count()) {
+                                true => match buf.cell_mut((end_x, y)) {
+                                    Some(cell) => {
+                                        cell.set_char(' ').set_style(
+                                            Style::default()
+                                                .bg(self.editor.settings.selection_color)
+                                                .fg(Color::White),
+                                        );
+                                    }
+                                    None => {}
+                                },
+                                false => {}
+                            }
                         }
+                        false => {}
                     }
                 }
+                None => {}
             }
 
             // Update byte offset for next line (including newline)
@@ -166,15 +188,19 @@ impl Widget for EditorWidget<'_> {
         }
 
         // Handle cursor on empty document
-        if lines.len() == 1 && lines[0].is_empty() && cursor_row == 0 && cursor_col == 0 {
-            if let Some(cell) = buf.cell_mut((area.x, area.y)) {
-                cell.set_char(' ').set_style(
-                    Style::default()
-                        .bg(self.editor.settings.cursor_color)
-                        .fg(Color::White)
-                        .add_modifier(Modifier::BOLD),
-                );
-            }
+        match lines.len() == 1 && lines[0].is_empty() && cursor_row == 0 && cursor_col == 0 {
+            true => match buf.cell_mut((area.x, area.y)) {
+                Some(cell) => {
+                    cell.set_char(' ').set_style(
+                        Style::default()
+                            .bg(self.editor.settings.cursor_color)
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD),
+                    );
+                }
+                None => {}
+            },
+            false => {}
         }
     }
 }
