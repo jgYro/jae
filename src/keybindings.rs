@@ -1,9 +1,180 @@
 use crate::commands::CtrlXPrefix;
 use crate::editor::buffer_ops::is_text_input_key;
-use crate::editor::Editor;
+use crate::editor::{Editor, JumpMode, JumpPhase};
 use crate::logging;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tui_textarea::{CursorMove, Input};
+
+/// Get current time in milliseconds since Unix epoch
+fn current_time_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Result of handling jump mode input
+enum JumpModeResult {
+    /// Jump mode handled the key, continue running
+    Handled,
+    /// Jump mode not active
+    NotActive,
+    /// Jump mode cancelled
+    Cancelled,
+    /// Jump completed, cursor moved
+    Jumped,
+}
+
+/// Handle input when jump mode is active
+fn handle_jump_mode_input(editor: &mut Editor, key: &KeyEvent) -> JumpModeResult {
+    let jump_mode = match &editor.jump_mode {
+        Some(jm) => jm.clone(),
+        None => return JumpModeResult::NotActive,
+    };
+
+    match (key.code, key.modifiers) {
+        // Cancel with ESC or C-g
+        (KeyCode::Esc, _) | (KeyCode::Char('g'), KeyModifiers::CONTROL) => {
+            editor.jump_mode = None;
+            return JumpModeResult::Cancelled;
+        }
+        // Backspace - remove last character from pattern (accept any modifiers)
+        (KeyCode::Backspace, _) => {
+            match &mut editor.jump_mode {
+                Some(ref mut jm) => {
+                    jm.pattern.pop();
+                    jm.last_keystroke_ms = current_time_ms();
+                    // Update targets based on new pattern
+                    let lines: Vec<String> = editor.textarea.lines().iter().map(|s| s.to_string()).collect();
+                    let pattern = jm.pattern.clone();
+                    jm.find_matches(&lines, &pattern);
+                    // If pattern is empty, cancel jump mode
+                    match jm.pattern.is_empty() {
+                        true => {
+                            editor.jump_mode = None;
+                            return JumpModeResult::Cancelled;
+                        }
+                        false => {}
+                    }
+                }
+                None => {}
+            }
+            return JumpModeResult::Handled;
+        }
+        // Enter - immediately transition to selecting phase
+        (KeyCode::Enter, _) => {
+            match &mut editor.jump_mode {
+                Some(ref mut jm) => {
+                    match jm.targets.is_empty() {
+                        true => {
+                            // No matches, cancel
+                            editor.jump_mode = None;
+                            return JumpModeResult::Cancelled;
+                        }
+                        false => {
+                            // Transition to selecting phase
+                            jm.phase = JumpPhase::Selecting;
+                        }
+                    }
+                }
+                None => {}
+            }
+            return JumpModeResult::Handled;
+        }
+        // Regular character input
+        (KeyCode::Char(c), KeyModifiers::NONE) | (KeyCode::Char(c), KeyModifiers::SHIFT) => {
+            match jump_mode.phase {
+                JumpPhase::Typing => {
+                    match &mut editor.jump_mode {
+                        Some(ref mut jm) => {
+                            jm.pattern.push(c);
+                            jm.last_keystroke_ms = current_time_ms();
+                            // Update targets based on new pattern
+                            let lines: Vec<String> = editor.textarea.lines().iter().map(|s| s.to_string()).collect();
+                            let pattern = jm.pattern.clone();
+                            jm.find_matches(&lines, &pattern);
+                        }
+                        None => {}
+                    }
+                    return JumpModeResult::Handled;
+                }
+                JumpPhase::Selecting => {
+                    // Try to match against labels
+                    let target = jump_mode.find_target_by_label(&c.to_string());
+                    match target {
+                        Some(t) => {
+                            // Jump to target
+                            let row = t.row;
+                            let col = t.col;
+                            editor.jump_mode = None;
+                            // Move cursor to target position
+                            editor.textarea.move_cursor(CursorMove::Jump(row as u16, col as u16));
+                            return JumpModeResult::Jumped;
+                        }
+                        None => {
+                            // Check if this is a prefix for multi-char labels
+                            match jump_mode.has_label_prefix(&c.to_string()) {
+                                true => {
+                                    // Wait for more input - update pending label
+                                    match &mut editor.jump_mode {
+                                        Some(ref mut jm) => {
+                                            // Filter targets to only those starting with this char
+                                            jm.targets.retain(|t| t.label.starts_with(c));
+                                            // Shorten labels by removing the first char
+                                            for t in &mut jm.targets {
+                                                match t.label.len() > 1 {
+                                                    true => {
+                                                        t.label = t.label[1..].to_string();
+                                                    }
+                                                    false => {}
+                                                }
+                                            }
+                                        }
+                                        None => {}
+                                    }
+                                    return JumpModeResult::Handled;
+                                }
+                                false => {
+                                    // Invalid label, cancel
+                                    editor.jump_mode = None;
+                                    return JumpModeResult::Cancelled;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        _ => {
+            // Unknown key in jump mode, cancel
+            editor.jump_mode = None;
+            return JumpModeResult::Cancelled;
+        }
+    }
+}
+
+/// Check if jump mode should transition from typing to selecting based on timeout
+pub fn check_jump_mode_timeout(editor: &mut Editor) {
+    match &mut editor.jump_mode {
+        Some(ref mut jm) => {
+            match jm.phase {
+                JumpPhase::Typing => {
+                    let now = current_time_ms();
+                    let elapsed = now.saturating_sub(jm.last_keystroke_ms);
+                    match elapsed >= jm.timeout_ms && !jm.pattern.is_empty() && !jm.targets.is_empty() {
+                        true => {
+                            jm.phase = JumpPhase::Selecting;
+                        }
+                        false => {}
+                    }
+                }
+                JumpPhase::Selecting => {}
+            }
+        }
+        None => {}
+    }
+}
 
 /// Result of handling a key in a minibuffer-like context
 enum MinibufferKeyResult {
@@ -187,6 +358,28 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
         // Restore terminal state before force quitting
         ratatui::restore();
         std::process::exit(0);
+    }
+
+    // Check jump mode timeout before processing input
+    check_jump_mode_timeout(editor);
+
+    // Handle jump mode input (takes priority over everything except force quit)
+    match handle_jump_mode_input(editor, &key) {
+        JumpModeResult::Handled => {
+            log::debug!("Jump mode: Handled");
+            return true;
+        }
+        JumpModeResult::Jumped => {
+            log::debug!("Jump mode: Jumped");
+            return true;
+        }
+        JumpModeResult::Cancelled => {
+            log::debug!("Jump mode: Cancelled");
+            return true;
+        }
+        JumpModeResult::NotActive => {
+            // Continue with normal handling
+        }
     }
 
     // Track if we had a floating window before should_quit
@@ -411,6 +604,16 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
         // Syntax-aware selection shrink (Alt-i, like Helix)
         (KeyCode::Char('i'), KeyModifiers::ALT) => {
             editor.shrink_selection();
+        }
+
+        // Avy-like jump mode (M-j for "jump")
+        (KeyCode::Char('j'), mods) if mods.contains(KeyModifiers::ALT) => {
+            // Ensure clean state
+            editor.jump_mode = None;
+            let mut jm = JumpMode::new();
+            jm.last_keystroke_ms = current_time_ms();
+            editor.jump_mode = Some(jm);
+            log::debug!("Jump mode activated");
         }
 
         // Word delete operations (self-contained)

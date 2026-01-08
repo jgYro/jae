@@ -1,7 +1,7 @@
 //! Core Editor struct and initialization.
 
 use super::syntax::{HighlightResult, HighlightSpan, Language, SyntaxState};
-use super::{MarkState, Settings, StatusBarState, UndoManager};
+use super::{JumpMode, MarkState, Settings, StatusBarState, UndoManager};
 use crate::clipboard::ClipboardManager;
 use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::style::{Color, Modifier, Style};
@@ -56,6 +56,8 @@ pub struct Editor {
     pub scroll_offset: usize,
     /// Selection history for syntax-aware shrink (stores previous selections as byte ranges)
     pub selection_history: Vec<(usize, usize)>,
+    /// Avy-like jump mode state (None when not active)
+    pub jump_mode: Option<JumpMode>,
 }
 
 impl Editor {
@@ -102,6 +104,7 @@ impl Editor {
             viewport_height: 24, // Default, updated each frame
             scroll_offset: 0,
             selection_history: Vec::new(),
+            jump_mode: None,
         }
     }
 

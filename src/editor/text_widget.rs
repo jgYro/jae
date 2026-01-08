@@ -49,6 +49,14 @@ impl Widget for EditorWidget<'_> {
             true => self.render_with_soft_wrap(area, buf, &lines, cursor_row, cursor_col, viewport_width, viewport_height),
             false => self.render_with_h_scroll(area, buf, &lines, cursor_row, cursor_col, viewport_width, viewport_height),
         }
+
+        // Render jump mode overlays if active
+        match &self.editor.jump_mode {
+            Some(jump_mode) => {
+                self.render_jump_mode(area, buf, &lines, jump_mode);
+            }
+            None => {}
+        }
     }
 }
 
@@ -486,6 +494,114 @@ impl EditorWidget<'_> {
                 None => {}
             },
             false => {}
+        }
+    }
+
+    /// Render jump mode overlays (labels and match highlights)
+    fn render_jump_mode(
+        &self,
+        area: Rect,
+        buf: &mut Buffer,
+        lines: &[String],
+        jump_mode: &super::JumpMode,
+    ) {
+        use super::JumpPhase;
+
+        let scroll_offset = self.get_scroll_offset();
+        let viewport_height = area.height as usize;
+
+        // Style for match highlights (during typing phase)
+        let match_style = Style::default()
+            .bg(Color::Yellow)
+            .fg(Color::Black);
+
+        // Style for jump labels (during selecting phase)
+        let label_style = Style::default()
+            .bg(Color::Magenta)
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD);
+
+        // Dim style for non-label text during selecting phase
+        let dim_style = Style::default()
+            .fg(Color::DarkGray);
+
+        // During selecting phase, dim all visible text first
+        match jump_mode.phase {
+            JumpPhase::Selecting => {
+                for screen_row in 0..viewport_height {
+                    let y = area.y + screen_row as u16;
+                    for x in area.x..area.x + area.width {
+                        match buf.cell_mut((x, y)) {
+                            Some(cell) => {
+                                cell.set_style(dim_style);
+                            }
+                            None => {}
+                        }
+                    }
+                }
+            }
+            JumpPhase::Typing => {}
+        }
+
+        // Render each target
+        for target in &jump_mode.targets {
+            // Check if target is in visible viewport
+            match target.row >= scroll_offset && target.row < scroll_offset + viewport_height {
+                true => {
+                    let screen_row = (target.row - scroll_offset) as u16;
+                    let y = area.y + screen_row;
+
+                    // Get the line to calculate column position
+                    match lines.get(target.row) {
+                        Some(_line) => {
+                            // Calculate screen x position (accounting for h_scroll if needed)
+                            let screen_col = target.col as u16;
+                            let x = area.x + screen_col;
+
+                            match x < area.x + area.width {
+                                true => {
+                                    match jump_mode.phase {
+                                        JumpPhase::Typing => {
+                                            // Highlight the match
+                                            let pattern_len = jump_mode.pattern.chars().count();
+                                            for i in 0..pattern_len {
+                                                let highlight_x = x + i as u16;
+                                                match highlight_x < area.x + area.width {
+                                                    true => match buf.cell_mut((highlight_x, y)) {
+                                                        Some(cell) => {
+                                                            cell.set_style(match_style);
+                                                        }
+                                                        None => {}
+                                                    },
+                                                    false => break,
+                                                }
+                                            }
+                                        }
+                                        JumpPhase::Selecting => {
+                                            // Render the label over the text
+                                            for (i, ch) in target.label.chars().enumerate() {
+                                                let label_x = x + i as u16;
+                                                match label_x < area.x + area.width {
+                                                    true => match buf.cell_mut((label_x, y)) {
+                                                        Some(cell) => {
+                                                            cell.set_char(ch).set_style(label_style);
+                                                        }
+                                                        None => {}
+                                                    },
+                                                    false => break,
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                false => {}
+                            }
+                        }
+                        None => {}
+                    }
+                }
+                false => {}
+            }
         }
     }
 }

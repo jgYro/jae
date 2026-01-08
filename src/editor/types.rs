@@ -325,3 +325,155 @@ impl Default for StatusBarState {
         Self::new()
     }
 }
+
+/// A jump target - a location in the buffer with an assigned label
+#[derive(Clone, Debug)]
+pub struct JumpTarget {
+    /// Row (line) in the buffer
+    pub row: usize,
+    /// Column (character position) in the buffer
+    pub col: usize,
+    /// The label character(s) to press to jump here
+    pub label: String,
+}
+
+/// Phase of the jump mode
+#[derive(Clone, Debug, PartialEq)]
+pub enum JumpPhase {
+    /// Typing the search pattern, waiting for timeout
+    Typing,
+    /// Labels are shown, waiting for label selection
+    Selecting,
+}
+
+/// State for avy-like jump mode
+#[derive(Clone, Debug)]
+pub struct JumpMode {
+    /// Current search pattern being typed
+    pub pattern: String,
+    /// Current phase of jump mode
+    pub phase: JumpPhase,
+    /// All matching targets with their labels
+    pub targets: Vec<JumpTarget>,
+    /// Time of last keystroke (for timeout detection)
+    pub last_keystroke_ms: u64,
+    /// Timeout in milliseconds before showing labels
+    pub timeout_ms: u64,
+}
+
+impl JumpMode {
+    /// Create a new jump mode with default timeout
+    pub fn new() -> Self {
+        Self {
+            pattern: String::new(),
+            phase: JumpPhase::Typing,
+            targets: Vec::new(),
+            last_keystroke_ms: 0,
+            timeout_ms: 500, // 500ms default like avy
+        }
+    }
+
+    /// Generate labels for targets using home row keys
+    /// Returns labels like: a, s, d, f, g, h, j, k, l, aa, as, ad, ...
+    pub fn generate_labels(count: usize) -> Vec<String> {
+        const LABEL_CHARS: &[char] = &['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'];
+        let mut labels = Vec::with_capacity(count);
+
+        // Single character labels first
+        for &ch in LABEL_CHARS {
+            labels.push(ch.to_string());
+            match labels.len() >= count {
+                true => return labels,
+                false => {}
+            }
+        }
+
+        // Two character labels if needed
+        for &ch1 in LABEL_CHARS {
+            for &ch2 in LABEL_CHARS {
+                labels.push(format!("{}{}", ch1, ch2));
+                match labels.len() >= count {
+                    true => return labels,
+                    false => {}
+                }
+            }
+        }
+
+        labels
+    }
+
+    /// Find all matches of pattern in the text and assign labels
+    pub fn find_matches(&mut self, lines: &[String], pattern: &str) {
+        self.targets.clear();
+
+        match pattern.is_empty() {
+            true => return,
+            false => {}
+        }
+
+        let pattern_lower = pattern.to_lowercase();
+        let mut positions: Vec<(usize, usize)> = Vec::new();
+
+        // Find all case-insensitive matches
+        for (row, line) in lines.iter().enumerate() {
+            let line_lower = line.to_lowercase();
+            let mut search_start = 0;
+
+            while let Some(pos) = line_lower[search_start..].find(&pattern_lower) {
+                let col = line[..search_start].chars().count()
+                    + line_lower[search_start..search_start + pos].chars().count();
+                positions.push((row, col));
+                search_start += pos + 1;
+                match search_start >= line_lower.len() {
+                    true => break,
+                    false => {}
+                }
+            }
+        }
+
+        // Generate labels for all matches
+        let labels = Self::generate_labels(positions.len());
+
+        for (i, (row, col)) in positions.into_iter().enumerate() {
+            match labels.get(i) {
+                Some(label) => {
+                    self.targets.push(JumpTarget {
+                        row,
+                        col,
+                        label: label.clone(),
+                    });
+                }
+                None => break,
+            }
+        }
+    }
+
+    /// Find target by label prefix (for multi-char labels)
+    pub fn find_target_by_label(&self, label: &str) -> Option<&JumpTarget> {
+        // Exact match
+        for target in &self.targets {
+            match target.label == label {
+                true => return Some(target),
+                false => {}
+            }
+        }
+        None
+    }
+
+    /// Check if any target starts with the given label prefix
+    pub fn has_label_prefix(&self, prefix: &str) -> bool {
+        for target in &self.targets {
+            match target.label.starts_with(prefix) {
+                true => return true,
+                false => {}
+            }
+        }
+        false
+    }
+}
+
+impl Default for JumpMode {
+    fn default() -> Self {
+        Self::new()
+    }
+}

@@ -1,11 +1,12 @@
 use clap::Parser;
 use jae::editor::Editor;
-use jae::keybindings::handle_input;
+use jae::keybindings::{check_jump_mode_timeout, handle_input};
 use jae::logging;
 use jae::ui;
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use ratatui::Terminal;
 use std::path::Path;
+use std::time::Duration;
 
 #[derive(Parser)]
 #[command(name = "jae")]
@@ -96,15 +97,31 @@ fn run_app(
         editor.ensure_highlights_current();
         terminal.draw(|frame| ui::draw(frame, editor))?;
 
-        match event::read()? {
-            Event::Key(key) => {
-                // Only handle key press events (Windows sends both Press and Release)
-                match key.kind == KeyEventKind::Press && !handle_input(editor, key) {
-                    true => break,
-                    false => {}
+        // Use poll with timeout to support jump mode timeout detection
+        // When jump mode is active, use short timeout; otherwise use longer timeout
+        let poll_timeout = match editor.jump_mode.is_some() {
+            true => Duration::from_millis(50),
+            false => Duration::from_millis(500),
+        };
+
+        match event::poll(poll_timeout)? {
+            true => {
+                // Event available, read it
+                match event::read()? {
+                    Event::Key(key) => {
+                        // Only handle key press events (Windows sends both Press and Release)
+                        match key.kind == KeyEventKind::Press && !handle_input(editor, key) {
+                            true => break,
+                            false => {}
+                        }
+                    }
+                    _ => {}
                 }
             }
-            _ => {}
+            false => {
+                // Timeout - check jump mode timeout
+                check_jump_mode_timeout(editor);
+            }
         }
     }
 

@@ -30,8 +30,9 @@ pub use settings::Settings;
 
 // Re-export commonly used types
 pub use types::{
-    CommandInfo, FloatingMode, FloatingWindow, MarkState, MenuAction, MenuItem, MenuState,
-    MinibufferCallback, ResponseResult, ResponseType, SettingItem, SettingValue, StatusBarState,
+    CommandInfo, FloatingMode, FloatingWindow, JumpMode, JumpPhase, JumpTarget, MarkState,
+    MenuAction, MenuItem, MenuState, MinibufferCallback, ResponseResult, ResponseType,
+    SettingItem, SettingValue, StatusBarState,
 };
 
 // Re-export undo types
