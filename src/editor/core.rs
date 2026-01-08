@@ -1,6 +1,6 @@
 //! Core Editor struct and initialization.
 
-use super::syntax::{HighlightSpan, Language, Syntax, SyntaxHighlighter};
+use super::syntax::{HighlightResult, HighlightSpan, Language, SyntaxState};
 use super::{MarkState, Settings, StatusBarState, UndoManager};
 use crate::clipboard::ClipboardManager;
 use ratatui::crossterm::event::{KeyCode, KeyModifiers};
@@ -40,12 +40,12 @@ pub struct Editor {
     pub undo_manager: UndoManager,
     /// Detected language for syntax operations
     pub language: Language,
-    /// Tree-sitter syntax state (None for plain text)
-    pub syntax: Option<Syntax>,
-    /// Syntax highlighter (None for plain text)
-    pub highlighter: Option<SyntaxHighlighter>,
+    /// Unified syntax state for parsing and highlighting (None for plain text)
+    pub syntax_state: Option<SyntaxState>,
     /// Cached highlight spans (updated on buffer change)
     pub cached_highlights: Vec<HighlightSpan>,
+    /// Last syntax error message (if any)
+    pub syntax_error: Option<String>,
     /// Current recenter state for C-l cycling
     pub recenter_state: RecenterState,
     /// Whether the last command was a recenter (for consecutive C-l detection)
@@ -54,6 +54,8 @@ pub struct Editor {
     pub viewport_height: u16,
     /// Current vertical scroll offset (persists across frames)
     pub scroll_offset: usize,
+    /// Selection history for syntax-aware shrink (stores previous selections as byte ranges)
+    pub selection_history: Vec<(usize, usize)>,
 }
 
 impl Editor {
@@ -92,13 +94,14 @@ impl Editor {
             pending_quit: false,
             undo_manager: UndoManager::new(),
             language: Language::PlainText,
-            syntax: None,
-            highlighter: None,
+            syntax_state: None,
             cached_highlights: Vec::new(),
+            syntax_error: None,
             recenter_state: RecenterState::default(),
             last_was_recenter: false,
             viewport_height: 24, // Default, updated each frame
             scroll_offset: 0,
+            selection_history: Vec::new(),
         }
     }
 
@@ -122,12 +125,52 @@ impl Editor {
         );
     }
 
+    /// Ensure highlights are current before rendering.
+    /// This performs lazy parsing only when needed.
+    pub fn ensure_highlights_current(&mut self) {
+        match &mut self.syntax_state {
+            Some(state) => match state.cache_valid {
+                false => {
+                    let source = self.textarea.lines().join("\n");
+                    let timeout = self.settings.parse_timeout_ms;
+
+                    match state.parse_with_timeout(&source, timeout) {
+                        true => {
+                            // Parse succeeded, compute highlights
+                            match state.compute_highlights(&source) {
+                                HighlightResult::Success(spans) => {
+                                    self.cached_highlights = spans;
+                                    self.syntax_error = None;
+                                }
+                                HighlightResult::PartialSuccess { spans, error } => {
+                                    self.cached_highlights = spans;
+                                    self.syntax_error = Some(error);
+                                }
+                                HighlightResult::Failure(error) => {
+                                    self.cached_highlights.clear();
+                                    self.syntax_error = Some(error);
+                                }
+                            }
+                            state.cache_valid = true;
+                        }
+                        false => {
+                            // Parse timed out - keep old cached highlights
+                            self.syntax_error = Some("Parse timeout".to_string());
+                        }
+                    }
+                }
+                true => {}
+            },
+            None => {}
+        }
+    }
+
     /// Update cached syntax highlights for the current buffer.
+    /// This is the legacy method - prefer ensure_highlights_current() for lazy updates.
     pub fn update_highlights(&mut self) {
-        match &mut self.highlighter {
-            Some(highlighter) => {
-                let source = self.textarea.lines().join("\n");
-                self.cached_highlights = highlighter.highlight(&source);
+        match &mut self.syntax_state {
+            Some(state) => {
+                state.invalidate_cache();
             }
             None => self.cached_highlights.clear(),
         }
@@ -144,16 +187,14 @@ impl Editor {
 
     pub(crate) fn safe_string_slice(s: &str, start_char: usize, end_char: usize) -> String {
         let start_byte = Self::char_index_to_byte_index(s, start_char);
-        let end_byte = if end_char >= s.chars().count() {
-            s.len()
-        } else {
-            Self::char_index_to_byte_index(s, end_char)
+        let end_byte = match end_char >= s.chars().count() {
+            true => s.len(),
+            false => Self::char_index_to_byte_index(s, end_char),
         };
 
-        if start_byte <= end_byte && end_byte <= s.len() {
-            s[start_byte..end_byte].to_string()
-        } else {
-            String::new()
+        match start_byte <= end_byte && end_byte <= s.len() {
+            true => s[start_byte..end_byte].to_string(),
+            false => String::new(),
         }
     }
 }

@@ -355,4 +355,193 @@ impl Editor {
             false
         }
     }
+
+    // ==================== Syntax-Aware Selection ====================
+
+    /// Expand selection to parent syntax node (Alt-o, like Helix)
+    ///
+    /// If no selection is active, selects the smallest node at cursor.
+    /// If selection is active, expands to the parent node.
+    /// Pushes current selection to history for shrink operation.
+    pub fn expand_selection(&mut self) {
+        let syntax_state = match &self.syntax_state {
+            Some(s) => s,
+            None => return, // No syntax state, nothing to do
+        };
+
+        let source = self.textarea.lines().join("\n");
+
+        // Get current selection or cursor position
+        let (start_byte, end_byte) = match self.textarea.selection_range() {
+            Some(((start_row, start_col), (end_row, end_col))) => {
+                // Convert row/col to byte offsets
+                let start = self.row_col_to_byte(&source, start_row, start_col);
+                let end = self.row_col_to_byte(&source, end_row, end_col);
+                match start <= end {
+                    true => (start, end),
+                    false => (end, start),
+                }
+            }
+            None => {
+                // No selection, use cursor position
+                let (row, col) = self.textarea.cursor();
+                let byte_pos = self.row_col_to_byte(&source, row, col);
+                (byte_pos, byte_pos)
+            }
+        };
+
+        // Get parent node range
+        let new_range = match syntax_state.get_parent_node_range(start_byte, end_byte) {
+            Some(range) => range,
+            None => return,
+        };
+
+        // Only expand if we're actually getting a larger range
+        match new_range.0 < start_byte || new_range.1 > end_byte {
+            true => {
+                // Save current selection to history for shrink
+                self.selection_history.push((start_byte, end_byte));
+
+                // Convert byte range back to row/col and set selection
+                self.set_selection_from_bytes(&source, new_range.0, new_range.1);
+            }
+            false => {}
+        }
+    }
+
+    /// Shrink selection to previous or child syntax node (Alt-i, like Helix)
+    ///
+    /// If there's selection history, pops the previous selection.
+    /// Otherwise, tries to shrink to the first child node.
+    pub fn shrink_selection(&mut self) {
+        let source = self.textarea.lines().join("\n");
+
+        // First, try to restore from history
+        match self.selection_history.pop() {
+            Some((start_byte, end_byte)) => {
+                self.set_selection_from_bytes(&source, start_byte, end_byte);
+                return;
+            }
+            None => {}
+        }
+
+        // No history, try to shrink to child node
+        let syntax_state = match &self.syntax_state {
+            Some(s) => s,
+            None => return,
+        };
+
+        // Get current selection
+        let (start_byte, end_byte) = match self.textarea.selection_range() {
+            Some(((start_row, start_col), (end_row, end_col))) => {
+                let start = self.row_col_to_byte(&source, start_row, start_col);
+                let end = self.row_col_to_byte(&source, end_row, end_col);
+                match start <= end {
+                    true => (start, end),
+                    false => (end, start),
+                }
+            }
+            None => return, // No selection to shrink
+        };
+
+        // Get child node range
+        match syntax_state.get_child_node_range(start_byte, end_byte) {
+            Some((new_start, new_end)) => {
+                // Only shrink if we're actually getting a smaller range
+                match new_start > start_byte || new_end < end_byte {
+                    true => {
+                        self.set_selection_from_bytes(&source, new_start, new_end);
+                    }
+                    false => {}
+                }
+            }
+            None => {}
+        }
+    }
+
+    /// Clear selection history (called when selection is manually changed)
+    pub fn clear_selection_history(&mut self) {
+        self.selection_history.clear();
+    }
+
+    // ==================== Helper Methods ====================
+
+    /// Convert row/col to byte offset in source
+    fn row_col_to_byte(&self, source: &str, row: usize, col: usize) -> usize {
+        let mut byte_offset = 0;
+        for (line_idx, line) in source.lines().enumerate() {
+            match line_idx == row {
+                true => {
+                    // Count bytes up to col
+                    for (char_idx, ch) in line.chars().enumerate() {
+                        match char_idx >= col {
+                            true => break,
+                            false => byte_offset += ch.len_utf8(),
+                        }
+                    }
+                    return byte_offset;
+                }
+                false => {
+                    byte_offset += line.len() + 1; // +1 for newline
+                }
+            }
+        }
+        byte_offset
+    }
+
+    /// Convert byte offset to row/col
+    fn byte_to_row_col(&self, source: &str, byte_offset: usize) -> (usize, usize) {
+        let mut current_byte = 0;
+        for (line_idx, line) in source.lines().enumerate() {
+            let line_end = current_byte + line.len();
+            match byte_offset <= line_end {
+                true => {
+                    // This is the line - find column
+                    let offset_in_line = byte_offset - current_byte;
+                    let mut col = 0;
+                    let mut byte_count = 0;
+                    for ch in line.chars() {
+                        match byte_count >= offset_in_line {
+                            true => break,
+                            false => {
+                                byte_count += ch.len_utf8();
+                                col += 1;
+                            }
+                        }
+                    }
+                    return (line_idx, col);
+                }
+                false => {
+                    current_byte = line_end + 1; // +1 for newline
+                }
+            }
+        }
+        // Past end of document
+        let line_count = source.lines().count();
+        match line_count {
+            0 => (0, 0),
+            n => (n - 1, source.lines().last().map(|l| l.chars().count()).unwrap_or(0)),
+        }
+    }
+
+    /// Set selection from byte range
+    fn set_selection_from_bytes(&mut self, source: &str, start_byte: usize, end_byte: usize) {
+        let (start_row, start_col) = self.byte_to_row_col(source, start_byte);
+        let (end_row, end_col) = self.byte_to_row_col(source, end_byte);
+
+        // Move cursor to start, start selection, move to end
+        let start_row_u16 = min(start_row, u16::MAX as usize) as u16;
+        let start_col_u16 = min(start_col, u16::MAX as usize) as u16;
+        let end_row_u16 = min(end_row, u16::MAX as usize) as u16;
+        let end_col_u16 = min(end_col, u16::MAX as usize) as u16;
+
+        self.textarea.move_cursor(CursorMove::Jump(start_row_u16, start_col_u16));
+        self.textarea.start_selection();
+        self.textarea.move_cursor(CursorMove::Jump(end_row_u16, end_col_u16));
+
+        self.mark = MarkState::Active {
+            row: start_row,
+            col: start_col,
+        };
+    }
 }

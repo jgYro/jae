@@ -1,8 +1,12 @@
-//! Syntax highlighting using tree-sitter-highlight.
+//! Syntax highlighting types and utilities.
+//!
+//! This module provides:
+//! - HighlightSpan: A highlighted region with style information
+//! - HighlightResult: Result type for highlight operations with error info
+//! - HIGHLIGHT_NAMES: List of recognized highlight capture names
+//! - highlight_style: Map highlight names to terminal styles
 
-use super::Language;
 use ratatui::style::{Color, Modifier, Style};
-use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
 
 /// Highlight names that we recognize and can style.
 pub const HIGHLIGHT_NAMES: &[&str] = &[
@@ -65,6 +69,20 @@ pub struct HighlightSpan {
     pub style: Style,
 }
 
+/// Result of a highlight operation with detailed error information.
+#[derive(Debug)]
+pub enum HighlightResult {
+    /// Highlighting completed successfully
+    Success(Vec<HighlightSpan>),
+    /// Highlighting partially completed with some spans and an error
+    PartialSuccess {
+        spans: Vec<HighlightSpan>,
+        error: String,
+    },
+    /// Highlighting failed completely
+    Failure(String),
+}
+
 /// Map highlight name to terminal style.
 pub fn highlight_style(highlight_name: &str) -> Style {
     match highlight_name {
@@ -89,7 +107,9 @@ pub fn highlight_style(highlight_name: &str) -> Style {
 
         // Comments
         "comment" | "comment.documentation" => {
-            Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC)
         }
 
         // Operators
@@ -121,199 +141,75 @@ pub fn highlight_style(highlight_name: &str) -> Style {
 
         // HTML/JSX tags
         "tag" => Style::default().fg(Color::Red),
-        "tag.error" => Style::default().fg(Color::Red).add_modifier(Modifier::UNDERLINED),
+        "tag.error" => Style::default()
+            .fg(Color::Red)
+            .add_modifier(Modifier::UNDERLINED),
 
         // CSS-specific
         "charset" | "media" | "keyframes" | "supports" => {
-            Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::BOLD)
         }
 
         // Markdown-specific
-        "text.title" => Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
+        "text.title" => Style::default()
+            .fg(Color::Magenta)
+            .add_modifier(Modifier::BOLD),
         "text.emphasis" => Style::default().add_modifier(Modifier::ITALIC),
         "text.strong" => Style::default().add_modifier(Modifier::BOLD),
         "text.literal" => Style::default().fg(Color::Green),
-        "text.uri" => Style::default().fg(Color::Cyan).add_modifier(Modifier::UNDERLINED),
+        "text.uri" => Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::UNDERLINED),
         "text.reference" => Style::default().fg(Color::Blue),
 
         _ => Style::default(),
     }
 }
 
-/// Highlighter state for a specific language.
-pub struct SyntaxHighlighter {
-    config: HighlightConfiguration,
-    highlighter: Highlighter,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-impl SyntaxHighlighter {
-    /// Create a new highlighter for the given language.
-    pub fn new(language: Language) -> Option<Self> {
-        let mut config = match language {
-            Language::Rust => HighlightConfiguration::new(
-                tree_sitter_rust::LANGUAGE.into(),
-                "rust",
-                tree_sitter_rust::HIGHLIGHTS_QUERY,
-                tree_sitter_rust::INJECTIONS_QUERY,
-                "",
-            ),
-            Language::Python => HighlightConfiguration::new(
-                tree_sitter_python::LANGUAGE.into(),
-                "python",
-                tree_sitter_python::HIGHLIGHTS_QUERY,
-                "",
-                "",
-            ),
-            Language::JavaScript => {
-                // Combine base highlights with JSX highlights for JSX support
-                let combined_highlights = format!(
-                    "{}\n{}",
-                    tree_sitter_javascript::HIGHLIGHT_QUERY,
-                    tree_sitter_javascript::JSX_HIGHLIGHT_QUERY
-                );
-                HighlightConfiguration::new(
-                    tree_sitter_javascript::LANGUAGE.into(),
-                    "javascript",
-                    &combined_highlights,
-                    tree_sitter_javascript::INJECTIONS_QUERY,
-                    tree_sitter_javascript::LOCALS_QUERY,
-                )
-            }
-            Language::TypeScript => {
-                // TypeScript queries extend JavaScript, so combine them
-                let combined_highlights = format!(
-                    "{}\n{}",
-                    tree_sitter_javascript::HIGHLIGHT_QUERY,
-                    tree_sitter_typescript::HIGHLIGHTS_QUERY
-                );
-                HighlightConfiguration::new(
-                    tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-                    "typescript",
-                    &combined_highlights,
-                    tree_sitter_javascript::INJECTIONS_QUERY,
-                    tree_sitter_typescript::LOCALS_QUERY,
-                )
-            }
-            Language::Tsx => {
-                // TSX queries extend JavaScript + TypeScript + JSX
-                let combined_highlights = format!(
-                    "{}\n{}\n{}",
-                    tree_sitter_javascript::HIGHLIGHT_QUERY,
-                    tree_sitter_javascript::JSX_HIGHLIGHT_QUERY,
-                    tree_sitter_typescript::HIGHLIGHTS_QUERY
-                );
-                HighlightConfiguration::new(
-                    tree_sitter_typescript::LANGUAGE_TSX.into(),
-                    "tsx",
-                    &combined_highlights,
-                    tree_sitter_javascript::INJECTIONS_QUERY,
-                    tree_sitter_typescript::LOCALS_QUERY,
-                )
-            }
-            Language::Go => HighlightConfiguration::new(
-                tree_sitter_go::LANGUAGE.into(),
-                "go",
-                tree_sitter_go::HIGHLIGHTS_QUERY,
-                "",
-                "",
-            ),
-            Language::C => HighlightConfiguration::new(
-                tree_sitter_c::LANGUAGE.into(),
-                "c",
-                tree_sitter_c::HIGHLIGHT_QUERY,
-                "",
-                "",
-            ),
-            Language::Cpp => HighlightConfiguration::new(
-                tree_sitter_cpp::LANGUAGE.into(),
-                "cpp",
-                tree_sitter_cpp::HIGHLIGHT_QUERY,
-                "",
-                "",
-            ),
-            Language::Json => HighlightConfiguration::new(
-                tree_sitter_json::LANGUAGE.into(),
-                "json",
-                tree_sitter_json::HIGHLIGHTS_QUERY,
-                "",
-                "",
-            ),
-            Language::Markdown => {
-                // tree-sitter-md has separate block and inline grammars
-                // Use just the block grammar - inline highlighting would require injection support
-                HighlightConfiguration::new(
-                    tree_sitter_md::LANGUAGE.into(),
-                    "markdown",
-                    tree_sitter_md::HIGHLIGHT_QUERY_BLOCK,
-                    tree_sitter_md::INJECTION_QUERY_BLOCK,
-                    "",
-                )
-            }
-            Language::Html => HighlightConfiguration::new(
-                tree_sitter_html::LANGUAGE.into(),
-                "html",
-                tree_sitter_html::HIGHLIGHTS_QUERY,
-                tree_sitter_html::INJECTIONS_QUERY,
-                "",
-            ),
-            Language::Css => HighlightConfiguration::new(
-                tree_sitter_css::LANGUAGE.into(),
-                "css",
-                tree_sitter_css::HIGHLIGHTS_QUERY,
-                "",
-                "",
-            ),
-            Language::Java => HighlightConfiguration::new(
-                tree_sitter_java::LANGUAGE.into(),
-                "java",
-                tree_sitter_java::HIGHLIGHTS_QUERY,
-                "",
-                "",
-            ),
-            Language::PlainText => return None,
-        }
-        .ok()?;
-
-        config.configure(HIGHLIGHT_NAMES);
-
-        Some(Self {
-            config,
-            highlighter: Highlighter::new(),
-        })
+    #[test]
+    fn test_highlight_names_not_empty() {
+        assert!(!HIGHLIGHT_NAMES.is_empty());
     }
 
-    /// Get highlight spans for the given source code.
-    pub fn highlight(&mut self, source: &str) -> Vec<HighlightSpan> {
-        let mut spans = Vec::new();
+    #[test]
+    fn test_highlight_style_keyword() {
+        let style = highlight_style("keyword");
+        assert_eq!(style.fg, Some(Color::Magenta));
+    }
 
-        let highlights = match self.highlighter.highlight(&self.config, source.as_bytes(), None, |_| None) {
-            Ok(h) => h,
-            Err(_) => return spans,
+    #[test]
+    fn test_highlight_style_unknown() {
+        let style = highlight_style("unknown_highlight_name");
+        assert_eq!(style, Style::default());
+    }
+
+    #[test]
+    fn test_highlight_result_variants() {
+        let success = HighlightResult::Success(vec![]);
+        match success {
+            HighlightResult::Success(spans) => assert!(spans.is_empty()),
+            _ => panic!("Expected Success variant"),
+        }
+
+        let partial = HighlightResult::PartialSuccess {
+            spans: vec![],
+            error: "test error".to_string(),
         };
-
-        let mut style_stack: Vec<Style> = vec![Style::default()];
-
-        for event in highlights {
-            match event {
-                Ok(HighlightEvent::Source { start, end }) => {
-                    let style = style_stack.last().copied().unwrap_or_default();
-                    if style != Style::default() {
-                        spans.push(HighlightSpan { start, end, style });
-                    }
-                }
-                Ok(HighlightEvent::HighlightStart(highlight)) => {
-                    let name = HIGHLIGHT_NAMES.get(highlight.0).unwrap_or(&"");
-                    let style = highlight_style(name);
-                    style_stack.push(style);
-                }
-                Ok(HighlightEvent::HighlightEnd) => {
-                    style_stack.pop();
-                }
-                Err(_) => break,
-            }
+        match partial {
+            HighlightResult::PartialSuccess { error, .. } => assert_eq!(error, "test error"),
+            _ => panic!("Expected PartialSuccess variant"),
         }
 
-        spans
+        let failure = HighlightResult::Failure("fatal error".to_string());
+        match failure {
+            HighlightResult::Failure(msg) => assert_eq!(msg, "fatal error"),
+            _ => panic!("Expected Failure variant"),
+        }
     }
 }
-

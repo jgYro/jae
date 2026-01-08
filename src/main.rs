@@ -92,6 +92,8 @@ fn run_app(
     editor: &mut Editor,
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
+        // Lazy parse/highlight before render (only when cache is invalid)
+        editor.ensure_highlights_current();
         terminal.draw(|frame| ui::draw(frame, editor))?;
 
         match event::read()? {

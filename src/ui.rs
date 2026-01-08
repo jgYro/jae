@@ -612,6 +612,17 @@ fn render_status_bar(frame: &mut Frame, editor: &Editor, area: Rect) {
         ));
     }
 
+    // Syntax error indicator
+    match &editor.syntax_error {
+        Some(_) => {
+            status_spans.push(Span::styled(
+                " [PARSE ERR]",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ));
+        }
+        None => {}
+    }
+
     // Help hint (different when which-key is active)
     if editor.status_bar.has_active_prefix() {
         status_spans.push(Span::styled(

@@ -18,6 +18,8 @@ pub struct Settings {
     pub wrap_indicator: String,
     /// Color for the wrap indicator
     pub wrap_indicator_color: Color,
+    /// Maximum time for syntax parsing in milliseconds (0 = no limit)
+    pub parse_timeout_ms: u64,
 }
 
 impl Default for Settings {
@@ -32,6 +34,7 @@ impl Default for Settings {
             soft_wrap: false,
             wrap_indicator: "↪ ".to_string(),
             wrap_indicator_color: Color::DarkGray,
+            parse_timeout_ms: 100, // 100ms default timeout
         }
     }
 }

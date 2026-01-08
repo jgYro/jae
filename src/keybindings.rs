@@ -403,6 +403,16 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
             editor.redo();
         }
 
+        // Syntax-aware selection expansion (Alt-o, like Helix)
+        (KeyCode::Char('o'), KeyModifiers::ALT) => {
+            editor.expand_selection();
+        }
+
+        // Syntax-aware selection shrink (Alt-i, like Helix)
+        (KeyCode::Char('i'), KeyModifiers::ALT) => {
+            editor.shrink_selection();
+        }
+
         // Word delete operations (self-contained)
         (KeyCode::Char('d'), mods) if mods.contains(KeyModifiers::ALT) => {
             editor.delete_word_forward();

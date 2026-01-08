@@ -112,8 +112,11 @@ impl EditorWidget<'_> {
             let line_start_byte = current_byte;
 
             let mut x = area.x;
+            // Track byte offset incrementally instead of O(n²) recalculation
+            let mut byte_offset = line_start_byte;
             for (col, ch) in line.chars().enumerate() {
                 if col < h_scroll_offset {
+                    byte_offset += ch.len_utf8();
                     continue;
                 }
 
@@ -121,7 +124,6 @@ impl EditorWidget<'_> {
                     break;
                 }
 
-                let byte_offset = line_start_byte + line.chars().take(col).map(|c| c.len_utf8()).sum::<usize>();
                 let mut style = byte_styles.get(byte_offset).copied().unwrap_or_default();
 
                 // Selection overlay
@@ -164,6 +166,7 @@ impl EditorWidget<'_> {
                     None => {}
                 }
                 x += 1;
+                byte_offset += ch.len_utf8();
             }
 
             // Handle cursor at end of line
@@ -379,18 +382,21 @@ impl EditorWidget<'_> {
             }
 
             // Draw the text content
+            // Precompute segment start byte offset instead of O(n²) recalculation per char
+            let segment_start_byte: usize = line_byte_offset
+                + lines[visual_line.doc_line]
+                    .chars()
+                    .take(visual_line.start_col)
+                    .map(|c| c.len_utf8())
+                    .sum::<usize>();
+            let mut char_byte_offset = segment_start_byte;
+
             for (local_col, ch) in visual_line.text.chars().enumerate() {
                 if x >= area.x + area.width {
                     break;
                 }
 
                 let doc_col = visual_line.start_col + local_col;
-                let char_byte_offset = line_byte_offset + lines[visual_line.doc_line]
-                    .chars()
-                    .take(doc_col)
-                    .map(|c| c.len_utf8())
-                    .sum::<usize>();
-
                 let mut style = byte_styles.get(char_byte_offset).copied().unwrap_or_default();
 
                 // Selection overlay
@@ -437,6 +443,7 @@ impl EditorWidget<'_> {
                     None => {}
                 }
                 x += 1;
+                char_byte_offset += ch.len_utf8();
             }
 
             // Handle cursor at end of visual line (only if it's the last segment of the doc line)

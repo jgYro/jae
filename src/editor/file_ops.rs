@@ -1,6 +1,6 @@
 //! File operations for the editor.
 
-use super::syntax::{Language, Syntax, SyntaxHighlighter};
+use super::syntax::{Language, SyntaxState};
 use super::{
     CommandInfo, ConfirmationDialog, DeleteFileConfirmation, Editor, FloatingMode, FloatingWindow,
     MarkState, MinibufferCallback, QuitConfirmation,
@@ -177,17 +177,18 @@ impl Editor {
         self.mark = MarkState::None;
         self.undo_manager.clear();
 
-        // Detect language and initialize syntax
+        // Detect language and initialize unified syntax state
         self.language = Language::from_path(path);
-        self.syntax = Syntax::new(self.language);
-        match &mut self.syntax {
-            Some(syntax) => syntax.parse(&contents),
+        self.syntax_state = SyntaxState::new(self.language);
+        match &mut self.syntax_state {
+            Some(state) => {
+                state.parse(&contents);
+                // Invalidate cache to trigger highlight computation on next render
+                state.invalidate_cache();
+            }
             None => {}
         }
-
-        // Initialize syntax highlighter and cache highlights
-        self.highlighter = SyntaxHighlighter::new(self.language);
-        self.update_highlights();
+        self.cached_highlights.clear();
 
         Ok(())
     }
