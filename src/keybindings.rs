@@ -616,7 +616,13 @@ pub fn handle_input(editor: &mut Editor, key: KeyEvent) -> bool {
             log::debug!("Jump mode activated");
         }
 
-        // Word delete operations (self-contained)
+        // Delete operations (self-contained)
+        (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
+            editor.delete_char_forward();
+        }
+        (KeyCode::Char('h'), KeyModifiers::CONTROL) => {
+            editor.delete_char_backward();
+        }
         (KeyCode::Char('d'), mods) if mods.contains(KeyModifiers::ALT) => {
             editor.delete_word_forward();
         }
